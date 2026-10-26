@@ -13,6 +13,7 @@ import { GhostDjModal } from './components/GhostDjModal';
 import { AudioLabModal } from './components/AudioLabModal';
 import { PlaylistRescueModal } from './components/PlaylistRescueModal';
 import { ListeningRoomModal } from './components/ListeningRoomModal';
+import { AboutModal } from './components/AboutModal';
 import { audioLab } from './services/audioLabEngine';
 import { musicMemory } from './services/musicMemoryService';
 import { listeningRooms } from './services/listeningRoomsService';
@@ -376,6 +377,7 @@ export function App() {
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(getThemeSettings);
   const [isAppearanceModalOpen, setIsAppearanceModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
 
   const handleUpdateThemeSettings = (newSettings: ThemeSettings) => {
     setThemeSettings(newSettings);
@@ -1957,6 +1959,7 @@ export function App() {
           palette={currentPalette}
           ghostSkin={ghostSkin}
           onOpenAppearanceModal={() => setIsAppearanceModalOpen(true)}
+          onOpenAbout={() => setIsAboutModalOpen(true)}
           isDataSaver={dataSaverConfig.enabled}
           onOpenDataSaver={() => setIsDataSaverModalOpen(true)}
           queue={queue}
@@ -2239,6 +2242,12 @@ export function App() {
         isOpen={isListeningRoomOpen}
         onClose={() => setIsListeningRoomOpen(false)}
         currentTrack={currentTrack}
+      />
+
+      {/* 14. About Ghosttunes Information & Release Modal */}
+      <AboutModal
+        isOpen={isAboutModalOpen}
+        onClose={() => setIsAboutModalOpen(false)}
       />
       {/* 9. Floating Widget In-App Draggable Capsule */}
       {isInAppWidgetOpen && (

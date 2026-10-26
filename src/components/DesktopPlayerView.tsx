@@ -43,6 +43,7 @@ import {
   BarChart3,
   Sliders,
   Radio,
+  Info,
   Compass,
   Plus
 } from 'lucide-react';
@@ -72,6 +73,7 @@ interface Props {
   palette?: TrackPalette;
   ghostSkin?: GhostSkinProfile;
   onOpenAppearanceModal?: () => void;
+  onOpenAbout?: () => void;
   queue: Track[];
   queueIndex: number;
   volume: number;
@@ -170,6 +172,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
   palette: passedPalette,
   ghostSkin: passedGhostSkin,
   onOpenAppearanceModal,
+  onOpenAbout,
   onToggleFloatingWidget,
   isWidgetActive = false,
   queue,
@@ -951,6 +954,18 @@ export const DesktopPlayerView: React.FC<Props> = ({
                     <span>Backup & Restore</span>
                   </button>
                 )}
+
+                {onOpenAbout && (
+                  <button
+                    onClick={() => { setIsStudioMenuOpen(false); onOpenAbout(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left cursor-pointer"
+                    title="About Ghosttunes"
+                    aria-label="About Ghosttunes"
+                  >
+                    <Info className="w-4 h-4 text-[#e0536c]" />
+                    <span>About Ghosttunes</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1152,6 +1167,17 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   )}
                 </div>
               </div>
+
+              {onOpenAbout && (
+                <button
+                  onClick={onOpenAbout}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer mt-2"
+                  title="About Ghosttunes"
+                  aria-label="About Ghosttunes"
+                >
+                  <Info className="w-4 h-4 text-zinc-400 hover:text-[#e0536c]" />
+                </button>
+              )}
 
               {/* Expand Toggle at Bottom of Collapsed Mode */}
               <button
@@ -1430,6 +1456,17 @@ export const DesktopPlayerView: React.FC<Props> = ({
                     />
                   </button>
                 </div>
+
+                {onOpenAbout && (
+                  <button
+                    onClick={onOpenAbout}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-xl text-[11px] text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left mb-1"
+                    title="About Ghosttunes"
+                  >
+                    <Info className="w-3.5 h-3.5 text-[#e0536c]" />
+                    <span>About Ghosttunes</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => setIsSidebarCollapsed(true)}

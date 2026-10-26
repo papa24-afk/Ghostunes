@@ -4,8 +4,21 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![Electron Version](https://img.shields.io/badge/electron-45.0.0-blue.svg)](https://www.electronjs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/papa24-afk/Ghostunes?color=e0536c&label=Windows%20Installer)](https://github.com/papa24-afk/Ghostunes/releases/latest)
 
 > **Ghosttunes** is a modern, high-fidelity music streaming and desktop player application for Windows. Powered by React, TypeScript, and Electron, it combines ad-free streaming with real-time synchronized karaoke lyrics, an offline SQLite download engine, intelligent autoplay radio, and deep personalization.
+
+---
+
+## 📥 Download Windows Installer
+
+Get the latest production release ready to run on Windows 10 & 11:
+
+[**⬇️ Download Ghosttunes-Setup-1.0.0.exe (137 MB)**](https://github.com/papa24-afk/Ghostunes/releases/download/v1.0.0/Ghosttunes-Setup-1.0.0.exe)
+
+* **Current Version:** `1.0.0`
+* **Official Release Notes:** [Ghosttunes v1.0.0 on GitHub Releases](https://github.com/papa24-afk/Ghostunes/releases/tag/v1.0.0)
+* **SHA-256 Checksum:** `E7773F3C8BB513EDC2CDEF5C8382AA9008A0194846F7FCF55810EE98EAD3481E`
 
 ---
 
