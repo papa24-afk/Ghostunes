@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Local File Import & Storage
   importLocalFiles: () => ipcRenderer.invoke('ghosttunes:import-local-files'),
   openFolder: (type) => ipcRenderer.invoke('ghosttunes:open-folder', type),
+  openExternalUrl: (url) => ipcRenderer.invoke('ghosttunes:open-external-url', url),
 
   // Progress Event Subscriptions
   onDownloadProgress: (callback) => {
@@ -103,5 +104,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = () => callback();
     ipcRenderer.on('ghosttunes:mini-widget-closed', handler);
     return () => ipcRenderer.removeListener('ghosttunes:mini-widget-closed', handler);
+  },
+
+  // Secure Windows Auto-Updater API
+  updater: {
+    getState: () => ipcRenderer.invoke('ghosttunes:updater-get-state'),
+    checkForUpdates: () => ipcRenderer.invoke('ghosttunes:updater-check'),
+    startDownload: () => ipcRenderer.invoke('ghosttunes:updater-download'),
+    installUpdate: () => ipcRenderer.invoke('ghosttunes:updater-install'),
+    deferUpdate: () => ipcRenderer.invoke('ghosttunes:updater-defer'),
+    onUpdateStatus: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('ghosttunes:updater-status', handler);
+      return () => ipcRenderer.removeListener('ghosttunes:updater-status', handler);
+    }
   }
 });

@@ -45,7 +45,8 @@ import {
   Radio,
   Info,
   Compass,
-  Plus
+  Plus,
+  Settings
 } from 'lucide-react';
 import { DownloadsView } from './DownloadsView';
 import { MusicMemoryView } from './MusicMemoryView';
@@ -56,7 +57,7 @@ import { TrackPalette, getFallbackPalette } from '../utils/palette';
 import { segmentParagraphLyrics, getChronologicalLyrics, findActiveLyricIndex } from '../utils/lyricsParser';
 import { GhostSkinProfile, getFallbackGhostSkin } from '../utils/ghostSkin';
 import { ExploreView } from './ExploreView';
-import { toggleDesktopFullscreen, subscribeFullscreenChange } from '../services/desktopService';
+import { toggleDesktopFullscreen, subscribeFullscreenChange, openExternalLink } from '../services/desktopService';
 
 interface Props {
   track: Track | null;
@@ -100,6 +101,7 @@ interface Props {
   onVolumeChange: (vol: number) => void;
   onToggleMute: () => void;
   onToggleLike: () => void;
+  onToggleFavorite?: (track: Track) => void;
   onOpenLyrics: () => void;
   onOpenExplore?: (tab?: 'search' | 'library' | 'favorites' | 'history' | 'playlists') => void;
   onGoHome?: () => void;
@@ -201,6 +203,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
   onVolumeChange,
   onToggleMute,
   onToggleLike,
+  onToggleFavorite,
   onOpenLyrics,
   onOpenExplore,
   onGoHome,
@@ -1168,26 +1171,66 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 </div>
               </div>
 
-              {onOpenAbout && (
-                <button
-                  onClick={onOpenAbout}
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer mt-2"
-                  title="About Ghosttunes"
-                  aria-label="About Ghosttunes"
-                >
-                  <Info className="w-4 h-4 text-zinc-400 hover:text-[#e0536c]" />
-                </button>
-              )}
+              {/* Bottom Utilities in Collapsed Mode */}
+              <div className="w-full flex flex-col items-center space-y-1.5 mt-auto pt-2.5 border-t border-white/[0.06]">
+                {/* Audio Lab Shortcut */}
+                {onOpenAudioLab && (
+                  <button
+                    onClick={onOpenAudioLab}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-amber-400 hover:bg-white/5 transition-colors cursor-pointer"
+                    title="Audio Lab (DSP Equalizer)"
+                    aria-label="Audio Lab"
+                  >
+                    <Sliders className="w-4 h-4" />
+                  </button>
+                )}
 
-              {/* Expand Toggle at Bottom of Collapsed Mode */}
-              <button
-                onClick={() => setIsSidebarCollapsed(false)}
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer mt-4"
-                title="Expand sidebar"
-                aria-label="Expand sidebar"
-              >
-                <PanelLeftOpen className="w-4 h-4 text-[#e0536c]" />
-              </button>
+                {/* Ghost Visuals Shortcut */}
+                {onOpenLyrics && (
+                  <button
+                    onClick={onOpenLyrics}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-[#ff8099] hover:bg-white/5 transition-colors cursor-pointer"
+                    title="Ghost Visuals & Synced Lyrics"
+                    aria-label="Ghost Visuals"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* WhatsApp Contact Developer */}
+                <button
+                  onClick={() => openExternalLink('https://wa.me/kobb.y298')}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/10 transition-colors cursor-pointer group"
+                  title="Contact Developer (WhatsApp: D!g!†@L G#0$†)"
+                  aria-label="Contact Developer"
+                >
+                  <svg className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                  </svg>
+                </button>
+
+                {/* About Ghosttunes / Settings */}
+                {onOpenAbout && (
+                  <button
+                    onClick={onOpenAbout}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                    title="Settings & About Ghosttunes"
+                    aria-label="Settings and About"
+                  >
+                    <Settings className="w-4 h-4 text-zinc-400 hover:text-white" />
+                  </button>
+                )}
+
+                {/* Expand Toggle at Bottom of Collapsed Mode */}
+                <button
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer mt-1"
+                  title="Expand sidebar"
+                  aria-label="Expand sidebar"
+                >
+                  <PanelLeftOpen className="w-4 h-4 text-[#e0536c]" />
+                </button>
+              </div>
             </div>
           ) : (
             /* EXPANDED FULL SIDEBAR (w-56 / w-60) */
@@ -1457,20 +1500,61 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   </button>
                 </div>
 
+                {/* Audio Lab Shortcut */}
+                {onOpenAudioLab && (
+                  <button
+                    onClick={onOpenAudioLab}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left"
+                    title="Open Audio Lab Equalizer & DSP"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Audio Lab</span>
+                  </button>
+                )}
+
+                {/* Ghost Visuals Shortcut */}
+                {onOpenLyrics && (
+                  <button
+                    onClick={onOpenLyrics}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left"
+                    title="Open Ghost Visuals and Synced Lyrics"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#ff8099]" />
+                    <span>Ghost Visuals</span>
+                  </button>
+                )}
+
+                {/* Contact Developer (WhatsApp) */}
+                <button
+                  onClick={() => openExternalLink('https://wa.me/kobb.y298')}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs text-zinc-300 hover:text-white bg-[#25D366]/[0.08] hover:bg-[#25D366]/[0.15] border border-[#25D366]/20 transition-all cursor-pointer text-left group"
+                  title="Contact Developer D!g!†@L G#0$† on WhatsApp"
+                  aria-label="Contact Developer on WhatsApp"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <svg className="w-3.5 h-3.5 fill-current text-[#25D366] flex-shrink-0 group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                    </svg>
+                    <span className="font-medium text-white group-hover:text-emerald-300 transition-colors">Contact Developer</span>
+                  </div>
+                  <span className="text-[10px] text-[#25D366] font-mono font-semibold">WA</span>
+                </button>
+
+                {/* Settings / About Ghosttunes */}
                 {onOpenAbout && (
                   <button
                     onClick={onOpenAbout}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-xl text-[11px] text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left mb-1"
-                    title="About Ghosttunes"
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left"
+                    title="Settings & About Ghosttunes"
                   >
-                    <Info className="w-3.5 h-3.5 text-[#e0536c]" />
-                    <span>About Ghosttunes</span>
+                    <Settings className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Settings & About</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => setIsSidebarCollapsed(true)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-xl text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
+                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
                   title="Collapse sidebar (Ctrl+B)"
                 >
                   <PanelLeftClose className="w-3.5 h-3.5" />
@@ -1675,16 +1759,20 @@ export const DesktopPlayerView: React.FC<Props> = ({
                       <div className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => {
-                            if (isCenter) onToggleLike();
+                            if (onToggleFavorite) {
+                              onToggleFavorite(item);
+                            } else if (isCenter) {
+                              onToggleLike();
+                            }
                           }}
-                          className="p-1 rounded-lg text-zinc-400 hover:text-white transition-colors focus-visible:ring-1 focus-visible:ring-white/25 outline-none"
-                          title={isCenter && isLiked ? 'Favourited' : 'Add to Favourites'}
-                          aria-label="Add to Favourites"
+                          className="p-1 rounded-lg text-zinc-400 hover:text-white transition-colors focus-visible:ring-1 focus-visible:ring-white/25 outline-none cursor-pointer"
+                          title={favorites.some(f => String(f.id).trim() === String(item.id).trim()) ? 'Remove from Favourites' : 'Add to Favourites'}
+                          aria-label={favorites.some(f => String(f.id).trim() === String(item.id).trim()) ? 'Remove from Favourites' : 'Add to Favourites'}
                         >
                           <Heart 
                             className={`w-3.5 h-3.5 transition-colors ${
-                              isCenter && isLiked 
-                                ? 'fill-rose-500/85 text-rose-500/85' 
+                              favorites.some(f => String(f.id).trim() === String(item.id).trim())
+                                ? 'fill-rose-500 text-rose-500' 
                                 : 'text-zinc-500 hover:text-zinc-200'
                             }`} 
                           />
@@ -1947,7 +2035,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
           isPlaying={isPlaying}
           onOpenArtist={onOpenArtist || (() => {})}
           favorites={favorites}
-          onToggleFavorite={onToggleLike}
+          onToggleFavorite={onToggleFavorite || onToggleLike}
           onAddToQueue={onAddToQueue}
           onOpenAddToPlaylist={onOpenAddToPlaylist}
         />
@@ -1971,7 +2059,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
           activeTab={currentView === 'favorites' ? 'favorites' : currentView === 'library' ? 'library' : 'explore'}
           onPlayTrack={onPlayTrack}
           onTogglePlayPause={onPlayPause}
-          onToggleFavorite={onToggleLike}
+          onToggleFavorite={onToggleFavorite || onToggleLike}
           onOpenAddToPlaylist={onOpenAddToPlaylist}
           onAddToQueue={onAddToQueue}
           isDataSaver={isDataSaver}
@@ -2038,7 +2126,13 @@ export const DesktopPlayerView: React.FC<Props> = ({
               </p>
             </div>
             <button
-              onClick={onToggleLike}
+              onClick={() => {
+                if (track && onToggleFavorite) {
+                  onToggleFavorite(track);
+                } else {
+                  onToggleLike();
+                }
+              }}
               className="p-1 rounded-full text-zinc-400 hover:text-white transition-colors flex-shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer"
               title={isLiked ? "Remove from Favourites" : "Add to Favourites"}
               aria-label={isLiked ? "Remove from Favourites" : "Add to Favourites"}

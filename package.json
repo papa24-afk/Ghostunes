@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Ghosttunes — Premium Music Player for Windows",
-  "author": "Ghosttunes",
+  "author": "D!g!†@L G#0$†",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -21,7 +21,14 @@
   "build": {
     "appId": "com.ghosttunes.app",
     "productName": "Ghosttunes",
-    "copyright": "Copyright © 2026 Ghosttunes",
+    "copyright": "Copyright © 2026 D!g!†@L G#0$†",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "papa24-afk",
+        "repo": "Ghostunes"
+      }
+    ],
     "asar": true,
     "asarUnpack": [
       "server.js",
@@ -60,6 +67,7 @@
   "dependencies": {
     "@distube/ytdl-core": "^5.0.1",
     "cors": "^2.8.5",
+    "electron-updater": "^6.8.11",
     "express": "^4.21.2",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",

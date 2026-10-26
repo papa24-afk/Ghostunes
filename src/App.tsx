@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Check } from 'lucide-react';
 import { Track, LyricLine, Playlist, HistoryItem, AutoplayMode } from './types';
 import { parseLrc, parseLyricsPayload, LyricFormat } from './utils/lyricsParser';
 import { DesktopPlayerView } from './components/DesktopPlayerView';
@@ -710,13 +711,13 @@ export function App() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Favorites state
+  // Favorites state with resilient initial load
   const [favorites, setFavorites] = useState<Track[]>(() => {
     try {
       const saved = localStorage.getItem('metrolist_favorites');
-      if (saved) {
+      if (saved !== null) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
       return DEFAULT_TRACKS.slice(0, 6);
     } catch {
@@ -1533,12 +1534,42 @@ export function App() {
     }
   };
 
+  // Toast feedback state for favorite operations
+  const [favoriteToast, setFavoriteToast] = useState<{ message: string; type: 'add' | 'remove' } | null>(null);
+  const favoriteToastTimerRef = useRef<any>(null);
+
   const toggleFavorite = (track: Track) => {
+    if (!track || !track.id) return;
+    const trackIdStr = String(track.id).trim();
+
     setFavorites(prev => {
-      const exists = prev.some(t => t.id === track.id);
-      if (exists) return prev.filter(t => t.id !== track.id);
-      return [track, ...prev];
+      const exists = prev.some(t => String(t.id).trim() === trackIdStr);
+      let updated: Track[];
+      if (exists) {
+        updated = prev.filter(t => String(t.id).trim() !== trackIdStr);
+        setFavoriteToast({ message: 'Removed from Favorites', type: 'remove' });
+      } else {
+        const cleaned = prev.filter(t => String(t.id).trim() !== trackIdStr);
+        updated = [track, ...cleaned];
+        setFavoriteToast({ message: 'Added to Favorites', type: 'add' });
+      }
+
+      // Synchronously write to local storage
+      try {
+        localStorage.setItem('metrolist_favorites', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save favorites to localStorage', e);
+      }
+
+      return updated;
     });
+
+    if (favoriteToastTimerRef.current) {
+      clearTimeout(favoriteToastTimerRef.current);
+    }
+    favoriteToastTimerRef.current = setTimeout(() => {
+      setFavoriteToast(null);
+    }, 2800);
   };
 
   // Playlist actions
@@ -1968,7 +1999,7 @@ export function App() {
           isMuted={isMuted}
           isShuffle={isShuffle}
           isRepeat={isRepeat}
-          isLiked={favorites.some(t => t.id === currentTrack?.id)}
+          isLiked={currentTrack ? favorites.some(t => String(t.id).trim() === String(currentTrack.id).trim()) : false}
           wallpaperMode={wallpaperMode}
           onSetWallpaperMode={handleSetWallpaperMode}
           wallpaper={wallpaper}
@@ -1986,6 +2017,7 @@ export function App() {
           onVolumeChange={handleVolumeChange}
           onToggleMute={toggleMute}
           onToggleLike={() => currentTrack && toggleFavorite(currentTrack)}
+          onToggleFavorite={toggleFavorite}
           onOpenLyrics={() => setShowLyrics(true)}
           onGoHome={() => {
             setCurrentView('home');
@@ -2093,7 +2125,7 @@ export function App() {
             isDataSaver={dataSaverConfig.enabled && dataSaverConfig.lowDataArtwork}
             volume={volume}
             isMuted={isMuted}
-            isLiked={favorites.some(t => t.id === currentTrack.id)}
+            isLiked={favorites.some(t => String(t.id).trim() === String(currentTrack.id).trim())}
             onToggleLike={() => currentTrack && toggleFavorite(currentTrack)}
             isShuffle={isShuffle}
             onToggleShuffle={() => setIsShuffle(!isShuffle)}
@@ -2249,6 +2281,23 @@ export function App() {
         isOpen={isAboutModalOpen}
         onClose={() => setIsAboutModalOpen(false)}
       />
+
+      {/* Floating Toast Notification for Favorites Actions */}
+      {favoriteToast && (
+        <div 
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-24 right-6 z-50 pointer-events-none flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-zinc-900/95 border border-zinc-700/80 shadow-2xl backdrop-blur-md text-white text-xs font-medium animate-in fade-in slide-in-from-bottom-2 duration-200"
+        >
+          <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+            favoriteToast.type === 'remove' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+          }`}>
+            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+          </div>
+          <span>{favoriteToast.message}</span>
+        </div>
+      )}
+
       {/* 9. Floating Widget In-App Draggable Capsule */}
       {isInAppWidgetOpen && (
         <FloatingWidgetView
@@ -2260,7 +2309,7 @@ export function App() {
           lyrics={lyrics}
           volume={volume}
           isMuted={isMuted}
-          isLiked={favorites.some(f => f.id === currentTrack?.id)}
+          isLiked={currentTrack ? favorites.some(f => String(f.id).trim() === String(currentTrack.id).trim()) : false}
           isShuffle={isShuffle}
           isRepeat={isRepeat}
           onPlayPause={togglePlayPause}

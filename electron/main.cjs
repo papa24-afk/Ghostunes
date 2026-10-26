@@ -6,6 +6,7 @@ const http = require('http');
 const { registerPrivilegedSchemes, setupMediaProtocol } = require('./mediaProtocol.cjs');
 const { GhosttunesDatabase } = require('./database.cjs');
 const { DownloadManager } = require('./downloadManager.cjs');
+const { AutoUpdaterManager } = require('./autoUpdaterManager.cjs');
 
 // Must register privileged schemes before app is ready
 registerPrivilegedSchemes();
@@ -22,6 +23,7 @@ let mainWindow = null;
 let miniPlayerWindow = null;
 let database = null;
 let downloadManager = null;
+let autoUpdaterManager = null;
 let backendProcess = null;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -187,6 +189,9 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    if (autoUpdaterManager) {
+      autoUpdaterManager.setMainWindow(mainWindow);
+    }
   });
 
   mainWindow.on('enter-full-screen', () => {
@@ -699,12 +704,50 @@ function setupIpcHandlers() {
       miniPlayerWindow.close();
     }
   });
+
+  // Secure External URL Opener (Strict HTTPS Allowlist)
+  ipcMain.handle('ghosttunes:open-external-url', async (_event, targetUrl) => {
+    try {
+      if (!targetUrl || typeof targetUrl !== 'string') {
+        throw new Error('Invalid URL provided.');
+      }
+      const parsed = new URL(targetUrl);
+      if (parsed.protocol !== 'https:') {
+        throw new Error('Only secure HTTPS URLs are permitted.');
+      }
+      const allowedHosts = [
+        'wa.me',
+        'api.whatsapp.com',
+        'web.whatsapp.com',
+        'github.com',
+        'raw.githubusercontent.com',
+        'developer.spotify.com',
+        'developers.deezer.com'
+      ];
+      const isAllowed = allowedHosts.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
+      if (!isAllowed) {
+        logDesktop(`[Security] Blocked external URL request to unauthorized host: ${parsed.hostname}`);
+        return { success: false, error: 'Unauthorized host.' };
+      }
+      logDesktop(`[Security] Opening verified external URL in system browser: ${parsed.origin}${parsed.pathname}`);
+      await shell.openExternal(parsed.toString());
+      return { success: true };
+    } catch (err) {
+      logDesktop('[Security] Failed to open external URL:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
 }
 
 app.whenReady().then(async () => {
   await ensureBackendServer();
   setupIpcHandlers();
+  autoUpdaterManager = new AutoUpdaterManager(logDesktop);
   createWindow();
+  if (autoUpdaterManager) {
+    autoUpdaterManager.setMainWindow(mainWindow);
+    autoUpdaterManager.startPeriodicChecks(4);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

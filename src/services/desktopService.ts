@@ -605,3 +605,96 @@ export const exportListeningData = async (): Promise<any> => {
     history
   };
 };
+
+export interface UpdateStatus {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'offline' | 'error' | 'restarting';
+  currentVersion: string;
+  availableVersion?: string | null;
+  releaseDate?: string | null;
+  releaseNotes?: string | null;
+  progress?: {
+    percent: number;
+    bytesPerSecond?: number;
+    transferred?: number;
+    total?: number;
+  } | null;
+  error?: string | null;
+  lastChecked?: string | null;
+}
+
+export const openExternalLink = async (targetUrl: string): Promise<boolean> => {
+  if (isDesktopApp() && window.electronAPI?.openExternalUrl) {
+    try {
+      const res = await window.electronAPI.openExternalUrl(targetUrl);
+      return res?.success !== false;
+    } catch (e) {
+      console.warn('[DesktopService] openExternalUrl error:', e);
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    return true;
+  }
+  return false;
+};
+
+export const getUpdateState = async (): Promise<UpdateStatus | null> => {
+  if (isDesktopApp() && window.electronAPI?.updater?.getState) {
+    try {
+      return await window.electronAPI.updater.getState();
+    } catch (e) {
+      console.warn('[DesktopService] getUpdateState error:', e);
+    }
+  }
+  return null;
+};
+
+export const checkAppUpdates = async (): Promise<UpdateStatus | null> => {
+  if (isDesktopApp() && window.electronAPI?.updater?.checkForUpdates) {
+    try {
+      return await window.electronAPI.updater.checkForUpdates();
+    } catch (e) {
+      console.warn('[DesktopService] checkAppUpdates error:', e);
+    }
+  }
+  return null;
+};
+
+export const downloadAppUpdate = async (): Promise<{ success: boolean; error?: string }> => {
+  if (isDesktopApp() && window.electronAPI?.updater?.startDownload) {
+    try {
+      return await window.electronAPI.updater.startDownload();
+    } catch (e) {
+      console.warn('[DesktopService] downloadAppUpdate error:', e);
+      return { success: false, error: String(e) };
+    }
+  }
+  return { success: false, error: 'Updater not available in browser mode' };
+};
+
+export const installAppUpdate = (): void => {
+  if (isDesktopApp() && window.electronAPI?.updater?.installUpdate) {
+    try {
+      window.electronAPI.updater.installUpdate();
+    } catch (e) {
+      console.warn('[DesktopService] installAppUpdate error:', e);
+    }
+  }
+};
+
+export const deferAppUpdate = (): void => {
+  if (isDesktopApp() && window.electronAPI?.updater?.deferUpdate) {
+    try {
+      window.electronAPI.updater.deferUpdate();
+    } catch (e) {
+      console.warn('[DesktopService] deferAppUpdate error:', e);
+    }
+  }
+};
+
+export const subscribeUpdateStatus = (callback: (status: UpdateStatus) => void): (() => void) => {
+  if (isDesktopApp() && window.electronAPI?.updater?.onUpdateStatus) {
+    return window.electronAPI.updater.onUpdateStatus(callback);
+  }
+  return () => {};
+};

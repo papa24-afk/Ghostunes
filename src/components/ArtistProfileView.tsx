@@ -288,7 +288,7 @@ export const ArtistProfileView: React.FC<ArtistProfileViewProps> = ({
           <div className="space-y-1">
             {profile.topTracks.map((t, idx) => {
               const isItemPlaying = currentTrack?.id === t.id && isPlaying;
-              const isFav = favorites.some(f => f.id === t.id);
+              const isFav = favorites.some(f => String(f?.id ?? '').trim() === String(t.id).trim());
 
               return (
                 <div

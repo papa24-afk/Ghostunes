@@ -306,7 +306,7 @@ export const ExploreView: React.FC<Props> = ({
   }, [displayTracks]);
 
   const isTopResultPlaying = currentTrack?.id === topResult?.id && isPlaying;
-  const isTopResultLiked = topResult ? favorites.some(f => f.id === topResult.id) : false;
+  const isTopResultLiked = topResult ? favorites.some(f => String(f?.id ?? '').trim() === String(topResult.id).trim()) : false;
 
   const formatTrackMeta = (track: Track) => {
     const format = track.album ? 'Album' : 'Single';
@@ -621,7 +621,7 @@ export const ExploreView: React.FC<Props> = ({
             selectedPlaylist.tracks.map((t, idx) => {
               const isCurrent = currentTrack?.id === t.id;
               const isTrackPlaying = isCurrent && isPlaying;
-              const isLiked = favorites.some(f => f.id === t.id);
+              const isLiked = favorites.some(f => String(f?.id ?? '').trim() === String(t.id).trim());
 
               return (
                 <div
@@ -1236,7 +1236,7 @@ export const ExploreView: React.FC<Props> = ({
               {displayTracks.map((track) => {
                 const isCurrent = currentTrack?.id === track.id;
                 const isTrackPlaying = isCurrent && isPlaying;
-                const isLiked = favorites.some(f => f.id === track.id);
+                const isLiked = favorites.some(f => String(f?.id ?? '').trim() === String(track.id).trim());
 
                 return (
                   <div

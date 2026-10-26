@@ -227,6 +227,15 @@ declare global {
       exportListeningData: () => Promise<any>;
       importLocalFiles: () => Promise<{ imported: number; tracks: Track[] }>;
       openFolder: (type: 'media' | 'artwork') => Promise<{ success: boolean }>;
+      openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
+      updater?: {
+        getState: () => Promise<any>;
+        checkForUpdates: () => Promise<any>;
+        startDownload: () => Promise<any>;
+        installUpdate: () => void;
+        deferUpdate: () => Promise<any>;
+        onUpdateStatus: (callback: (status: any) => void) => () => void;
+      };
       onDownloadProgress: (callback: (record: DownloadRecord) => void) => () => void;
       onPlaylistProgress: (callback: (progress: any) => void) => () => void;
       onOpenBackupModal: (callback: () => void) => () => void;

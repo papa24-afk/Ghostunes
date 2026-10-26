@@ -369,8 +369,7 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3.5 border-t border-zinc-800/80 bg-zinc-900/40 flex items-center justify-between text-xs text-zinc-500 font-mono">
-          <div>Audio Engine: Web Audio API &bull; 48kHz High-Fidelity</div>
+        <div className="px-6 py-3.5 border-t border-zinc-800/80 bg-zinc-900/40 flex items-center justify-end text-xs text-zinc-500 font-mono">
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-white transition-colors"
