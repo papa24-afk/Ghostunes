@@ -746,7 +746,7 @@ app.whenReady().then(async () => {
   createWindow();
   if (autoUpdaterManager) {
     autoUpdaterManager.setMainWindow(mainWindow);
-    autoUpdaterManager.startPeriodicChecks(4);
+    autoUpdaterManager.startPeriodicChecks(30);
   }
 
   app.on('activate', () => {

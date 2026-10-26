@@ -92,6 +92,28 @@ class AutoUpdaterManager {
         lastChecked: new Date().toISOString(),
         error: null
       });
+
+      // Trigger Native Windows System Desktop Notification
+      try {
+        const { Notification } = require('electron');
+        if (Notification.isSupported()) {
+          const notif = new Notification({
+            title: 'Ghosttunes Update Available',
+            body: `Version ${info.version} is available. Click here or open Settings to install.`,
+            silent: false
+          });
+          notif.on('click', () => {
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.show();
+              this.mainWindow.focus();
+              this.mainWindow.webContents.send('ghosttunes:open-about-modal');
+            }
+          });
+          notif.show();
+        }
+      } catch (err) {
+        this.log('Native notification error:', err.message);
+      }
     });
 
     autoUpdater.on('update-not-available', (info) => {
@@ -125,6 +147,27 @@ class AutoUpdaterManager {
         progress: { percent: 100 },
         error: null
       });
+
+      // Trigger Native Windows Notification
+      try {
+        const { Notification } = require('electron');
+        if (Notification.isSupported()) {
+          const notif = new Notification({
+            title: 'Ghosttunes Update Ready',
+            body: `Version ${info.version} has been downloaded. Restart Ghosttunes to finish installing.`,
+            silent: false
+          });
+          notif.on('click', () => {
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.show();
+              this.mainWindow.focus();
+            }
+          });
+          notif.show();
+        }
+      } catch (err) {
+        this.log('Native notification error:', err.message);
+      }
     });
 
     autoUpdater.on('error', (err) => {
@@ -348,16 +391,16 @@ class AutoUpdaterManager {
     return { success: true };
   }
 
-  startPeriodicChecks(intervalHours = 4) {
+  startPeriodicChecks(intervalMinutes = 30) {
     if (this.periodicTimer) clearInterval(this.periodicTimer);
 
-    // Initial check 12 seconds after launch to ensure initial audio/window rendering is uninterrupted
+    // Initial check 5 seconds after launch once window and audio engine are ready
     setTimeout(() => {
       this.checkForUpdates(false).catch(err => this.log('Initial check failed:', err.message));
-    }, 12000);
+    }, 5000);
 
-    // Periodic check every N hours
-    const intervalMs = intervalHours * 60 * 60 * 1000;
+    // Periodic background check every N minutes
+    const intervalMs = Math.max(intervalMinutes, 5) * 60 * 1000;
     this.periodicTimer = setInterval(() => {
       this.checkForUpdates(false).catch(err => this.log('Periodic check failed:', err.message));
     }, intervalMs);
