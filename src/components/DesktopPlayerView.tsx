@@ -157,6 +157,7 @@ interface Props {
   autoplayMode?: AutoplayMode;
   onChangeAutoplayMode?: (mode: AutoplayMode) => void;
   onRemoveFromQueue?: (trackId: string, index: number) => void;
+  hasUpdate?: boolean;
 }
 
 export const DesktopPlayerView: React.FC<Props> = ({
@@ -175,6 +176,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
   ghostSkin: passedGhostSkin,
   onOpenAppearanceModal,
   onOpenAbout,
+  hasUpdate = false,
   onToggleFloatingWidget,
   isWidgetActive = false,
   queue,
@@ -1213,11 +1215,14 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 {onOpenAbout && (
                   <button
                     onClick={onOpenAbout}
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                    title="Settings & About Ghosttunes"
+                    className="w-9 h-9 rounded-xl relative flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                    title={hasUpdate ? "Update Available! Settings & About Ghosttunes" : "Settings & About Ghosttunes"}
                     aria-label="Settings and About"
                   >
                     <Settings className="w-4 h-4 text-zinc-400 hover:text-white" />
+                    {hasUpdate && (
+                      <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-[#08080a] animate-pulse" />
+                    )}
                   </button>
                 )}
 
@@ -1544,11 +1549,19 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 {onOpenAbout && (
                   <button
                     onClick={onOpenAbout}
-                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left"
-                    title="Settings & About Ghosttunes"
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left"
+                    title={hasUpdate ? "Update Available! Settings & About Ghosttunes" : "Settings & About Ghosttunes"}
                   >
-                    <Settings className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Settings & About</span>
+                    <div className="flex items-center gap-2.5">
+                      <Settings className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>Settings & About</span>
+                    </div>
+                    {hasUpdate && (
+                      <span className="flex items-center gap-1 text-[10px] font-mono font-semibold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded-md">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Update
+                      </span>
+                    )}
                   </button>
                 )}
 

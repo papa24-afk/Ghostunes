@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Sparkles, X } from 'lucide-react';
 import { Track, LyricLine, Playlist, HistoryItem, AutoplayMode } from './types';
 import { parseLrc, parseLyricsPayload, LyricFormat } from './utils/lyricsParser';
 import { DesktopPlayerView } from './components/DesktopPlayerView';
@@ -63,7 +63,12 @@ import {
   subscribeWidgetSync,
   subscribeExecuteWidgetAction,
   subscribeRequestStateSync,
-  subscribeMiniWidgetClosed
+  subscribeMiniWidgetClosed,
+  subscribeUpdateStatus,
+  getUpdateState,
+  deferAppUpdate,
+  installAppUpdate,
+  UpdateStatus
 } from './services/desktopService';
 import { FloatingWidgetView } from './components/FloatingWidgetView';
 import { 
@@ -888,6 +893,23 @@ export function App() {
       unsubBackup();
       unsubRoom();
     };
+  }, []);
+
+  // Global Windows Auto-Updater State & Notification
+  const [appUpdate, setAppUpdate] = useState<UpdateStatus | null>(null);
+  const [isUpdateBannerDismissed, setIsUpdateBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeUpdateStatus((status) => {
+      setAppUpdate(status);
+      if (status.status === 'available' || status.status === 'downloaded') {
+        setIsUpdateBannerDismissed(false);
+      }
+    });
+    getUpdateState().then(st => {
+      if (st) setAppUpdate(st);
+    });
+    return unsub;
   }, []);
 
   const handleDownloadTrack = async (track: Track) => {
@@ -1991,6 +2013,7 @@ export function App() {
           ghostSkin={ghostSkin}
           onOpenAppearanceModal={() => setIsAppearanceModalOpen(true)}
           onOpenAbout={() => setIsAboutModalOpen(true)}
+          hasUpdate={appUpdate?.status === 'available' || appUpdate?.status === 'downloaded'}
           isDataSaver={dataSaverConfig.enabled}
           onOpenDataSaver={() => setIsDataSaverModalOpen(true)}
           queue={queue}
@@ -2295,6 +2318,83 @@ export function App() {
             <Check className="w-3.5 h-3.5 stroke-[2.5]" />
           </div>
           <span>{favoriteToast.message}</span>
+        </div>
+      )}
+
+      {/* Floating Global Auto-Update Notification Banner */}
+      {appUpdate?.status === 'available' && !isUpdateBannerDismissed && (
+        <div 
+          role="status"
+          className="fixed bottom-24 right-6 z-50 flex items-center gap-3 p-3.5 pr-4 rounded-2xl bg-[#121217]/95 border border-emerald-500/30 shadow-[0_8px_30px_rgba(0,0,0,0.8)] backdrop-blur-md text-white text-xs animate-in slide-in-from-bottom-3 duration-300 pointer-events-auto"
+        >
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 pr-2">
+            <div className="font-semibold text-white flex items-center gap-1.5">
+              <span>Update Available</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                v{appUpdate.availableVersion}
+              </span>
+            </div>
+            <div className="text-[11px] text-zinc-400">
+              A newer version of Ghosttunes is ready to install.
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => setIsAboutModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-semibold text-xs transition-colors cursor-pointer"
+            >
+              Update Now
+            </button>
+            <button
+              onClick={() => {
+                deferAppUpdate();
+                setIsUpdateBannerDismissed(true);
+              }}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              title="Later"
+              aria-label="Dismiss update notification"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {appUpdate?.status === 'downloaded' && !isUpdateBannerDismissed && (
+        <div 
+          role="status"
+          className="fixed bottom-24 right-6 z-50 flex items-center gap-3 p-3.5 pr-4 rounded-2xl bg-[#121217]/95 border border-emerald-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.8)] backdrop-blur-md text-white text-xs animate-in slide-in-from-bottom-3 duration-300 pointer-events-auto"
+        >
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+            <Check className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 pr-2">
+            <div className="font-semibold text-white">
+              Update Ready
+            </div>
+            <div className="text-[11px] text-zinc-400">
+              Restart Ghosttunes to finish installing v{appUpdate.availableVersion}.
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => installAppUpdate()}
+              className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-semibold text-xs transition-colors cursor-pointer"
+            >
+              Restart to Install
+            </button>
+            <button
+              onClick={() => setIsUpdateBannerDismissed(true)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              title="Later"
+              aria-label="Dismiss update notification"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
