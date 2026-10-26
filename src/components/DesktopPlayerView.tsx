@@ -714,6 +714,11 @@ export const DesktopPlayerView: React.FC<Props> = ({
               title="Ghosttunes Home"
               aria-label="Ghosttunes Home"
             >
+              <img 
+                src="/icon.png" 
+                alt="Ghosttunes" 
+                className="w-5 h-5 sm:w-6 sm:h-6 mr-2 rounded-md object-contain shadow-sm shadow-[#9e2a40]/30 group-hover:scale-105 transition-transform" 
+              />
               <span className="text-[20px] sm:text-[23px] font-serif font-bold tracking-tight text-white group-hover:text-zinc-200 transition-colors">
                 Ghosttunes
               </span>

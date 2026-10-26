@@ -148,6 +148,20 @@ async function ensureBackendServer() {
   }
 }
 
+function getAppIcon() {
+  const possiblePaths = [
+    path.join(__dirname, '../dist/icon.png'),
+    path.join(__dirname, '../public/icon.png'),
+    path.join(__dirname, '../dist/favicon.ico'),
+    path.join(__dirname, '../public/favicon.ico'),
+    path.join(process.resourcesPath, 'app.asar/dist/icon.png')
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return undefined;
+}
+
 function createWindow() {
   const isWindows = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
@@ -169,6 +183,11 @@ function createWindow() {
       backgroundThrottling: false
     }
   };
+
+  const appIcon = getAppIcon();
+  if (appIcon) {
+    windowOptions.icon = appIcon;
+  }
 
   if (isWindows) {
     windowOptions.titleBarStyle = 'hidden';
@@ -597,6 +616,7 @@ function setupIpcHandlers() {
 
     miniPlayerWindow = new BrowserWindow({
       ...initialBounds,
+      icon: getAppIcon(),
       minWidth: 380,
       minHeight: 180,
       maxWidth: 540,
@@ -740,6 +760,9 @@ function setupIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.ghosttunes.app');
+  }
   await ensureBackendServer();
   setupIpcHandlers();
   autoUpdaterManager = new AutoUpdaterManager(logDesktop);

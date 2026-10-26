@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Border Gradient: crimson -> rose -> bright pink -->
+    <linearGradient id="borderGrad" x1="15%" y1="90%" x2="90%" y2="10%">
+      <stop offset="0%" stop-color="#9e2a40" />
+      <stop offset="50%" stop-color="#e0536c" />
+      <stop offset="100%" stop-color="#ff758f" />
+    </linearGradient>
+
+    <!-- Background Gradient: subtle depth -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f0f14" />
+      <stop offset="100%" stop-color="#070709" />
+    </linearGradient>
+
+    <!-- Outer Bloom Glow Filter -->
+    <filter id="bloom" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#9e2a40" flood-opacity="0.45" />
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#e0536c" flood-opacity="0.35" />
+    </filter>
+
+    <!-- Sparkle Glow -->
+    <filter id="sparkleGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#ff8099" flood-opacity="0.8" />
+    </filter>
+
+    <!-- Music Note Neon Glow -->
+    <filter id="noteGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#ff8099" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base with Glow and Crimson Border -->
+  <!-- Size 400x400 centered at 256, 260 with rx=104 -->
+  <rect 
+    x="56" 
+    y="60" 
+    width="400" 
+    height="400" 
+    rx="108" 
+    ry="108" 
+    fill="url(#bgGrad)" 
+    stroke="url(#borderGrad)" 
+    stroke-width="16" 
+    filter="url(#bloom)" 
+  />
+
+  <!-- Subtle Inner Specular Rim -->
+  <rect 
+    x="65" 
+    y="69" 
+    width="382" 
+    height="382" 
+    rx="100" 
+    ry="100" 
+    fill="none" 
+    stroke="rgba(255, 255, 255, 0.08)" 
+    stroke-width="2" 
+  />
+
+  <!-- Eighth Note (Music2) Centered -->
+  <!-- Original Lucide Music2 viewBox: 0 0 24 24, center is (13, 11) -->
+  <!-- Scale factor = 11.2, translate to center at (250, 262) -->
+  <g transform="translate(116, 128) scale(11.2)" filter="url(#noteGlow)">
+    <!-- Eighth note stem and beam -->
+    <path 
+      d="m19 6-5.2-3.9a.5.5 0 0 0-.8.4V18" 
+      fill="none" 
+      stroke="#ff8099" 
+      stroke-width="2.2" 
+      stroke-linecap="round" 
+      stroke-linejoin="round" 
+    />
+    <!-- Note head circle -->
+    <circle 
+      cx="9" 
+      cy="18" 
+      r="4" 
+      fill="none" 
+      stroke="#ff8099" 
+      stroke-width="2.2" 
+      stroke-linecap="round" 
+      stroke-linejoin="round" 
+    />
+  </g>
+
+  <!-- Sparkle Star at Top-Right Corner (from Lucide Sparkles) -->
+  <!-- Scaled and positioned at (398, 76) -->
+  <g transform="translate(378, 56) scale(2.8)" filter="url(#sparkleGlow)">
+    <path 
+      d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" 
+      fill="#ff8099" 
+    />
+    <path d="M20 2v4" stroke="#ff8099" stroke-width="1.8" stroke-linecap="round" />
+    <path d="M22 4h-4" stroke="#ff8099" stroke-width="1.8" stroke-linecap="round" />
+  </g>
+</svg>
