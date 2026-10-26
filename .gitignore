@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production & Build outputs
+dist/
+release/
+build/
+*.exe
+*.blockmap
+*.zip
+*.tar.gz
+
+# Local Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local SQLite databases, test sandboxes, & user data
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+test_sandbox/
+test_user_data/
+test_user_*/
+
+# Local media, audio caches, and downloads
+media/
+downloads/
+artwork/
+
+# Development & Test logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# Scratch and debugging scripts
+scratch_*.py
+scratch_*.js
+scratch_*.cjs
+scratch_*.mjs
+test_*.png
+verify_*.png
+verify_*.js
+verify_*.cjs
+capture_*.cjs
+test_*.js
+test_*.cjs
+!test_desktop_engine.cjs
+!test_e2e_electron.cjs
+
+# OS & Editor metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,92 @@
+{
+  "name": "metrolist-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Ghosttunes — Premium Music Player for Windows",
+  "author": "Ghosttunes",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "test": "node test_desktop_engine.cjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "client": "vite",
+    "server": "node server.js",
+    "build": "vite build",
+    "electron": "electron .",
+    "desktop:dev": "concurrently \"npm run server\" \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build:desktop": "vite build && electron-builder --dir --config.electronDist=node_modules/electron/dist",
+    "build:installer": "vite build && electron-builder --win nsis --config.electronDist=node_modules/electron/dist"
+  },
+  "build": {
+    "appId": "com.ghosttunes.app",
+    "productName": "Ghosttunes",
+    "copyright": "Copyright © 2026 Ghosttunes",
+    "asar": true,
+    "asarUnpack": [
+      "server.js",
+      "serverPlaylistImport.js",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server.js",
+      "serverPlaylistImport.js",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ghosttunes"
+    }
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^5.0.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "lucide-react": "^1.16.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "youtubei.js": "^18.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.1",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "playwright": "^1.64.1",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "wait-on": "^9.5.1"
+  },
+  "allowScripts": {
+    "electron@45.0.0": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.25.12": true
+  }
+}

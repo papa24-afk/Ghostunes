@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%">
+  <defs>
+    <!-- Deep nocturnal background gradient -->
+    <linearGradient id="bgSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#020611" />
+      <stop offset="35%" stop-color="#071326" />
+      <stop offset="70%" stop-color="#0b1b36" />
+      <stop offset="100%" stop-color="#030814" />
+    </linearGradient>
+
+    <!-- Celestial Moon Glow -->
+    <radialGradient id="celestialGlow" cx="68%" cy="38%" r="40%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.25" />
+      <stop offset="30%" stop-color="#6366f1" stop-opacity="0.12" />
+      <stop offset="70%" stop-color="#020611" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Ambient horizon gradient -->
+    <linearGradient id="horizonGlow" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0c2340" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#020611" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Cyan rim lighting -->
+    <linearGradient id="rimCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.75" />
+      <stop offset="100%" stop-color="#818cf8" stop-opacity="0.3" />
+    </linearGradient>
+
+    <!-- Soft glow filter -->
+    <filter id="auraGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Sky Foundation -->
+  <rect width="1920" height="1080" fill="url(#bgSky)" />
+
+  <!-- Celestial Glow -->
+  <circle cx="1320" cy="400" r="480" fill="url(#celestialGlow)" />
+  <circle cx="1320" cy="400" r="160" fill="#e0f2fe" fill-opacity="0.05" filter="url(#auraGlow)" />
+
+  <!-- Starfield -->
+  <g fill="#ffffff">
+    <circle cx="120" cy="140" r="1.2" opacity="0.6" />
+    <circle cx="280" cy="220" r="1.8" opacity="0.7" />
+    <circle cx="440" cy="110" r="1.4" opacity="0.8" />
+    <circle cx="620" cy="180" r="2.0" opacity="0.9" />
+    <circle cx="850" cy="130" r="1.5" opacity="0.65" />
+    <circle cx="1020" cy="210" r="1.7" opacity="0.75" />
+    <circle cx="1200" cy="90" r="2.2" opacity="0.85" />
+    <circle cx="1450" cy="160" r="1.5" opacity="0.7" />
+    <circle cx="1680" cy="120" r="1.9" opacity="0.8" />
+    <circle cx="1820" cy="250" r="1.3" opacity="0.6" />
+    <circle cx="340" cy="380" r="1.6" opacity="0.6" />
+    <circle cx="560" cy="320" r="1.2" opacity="0.5" />
+    <circle cx="890" cy="350" r="1.8" opacity="0.7" />
+    <circle cx="1750" cy="390" r="1.4" opacity="0.65" />
+  </g>
+
+  <!-- Distant City Horizon Silhouette (Subtle, Atmospheric) -->
+  <path d="M 0 920 L 0 880 L 60 880 L 60 850 L 120 850 L 120 890 L 190 890 L 190 840 L 260 840 L 260 900 L 340 900 L 340 860 L 410 860 L 410 880 L 510 880 L 510 840 L 580 840 L 580 920 Z" fill="#040b17" opacity="0.5" />
+  <path d="M 1250 920 L 1250 860 L 1320 860 L 1320 830 L 1400 830 L 1400 870 L 1480 870 L 1480 810 L 1560 810 L 1560 880 L 1660 880 L 1660 840 L 1740 840 L 1740 890 L 1840 890 L 1840 850 L 1920 850 L 1920 920 Z" fill="#050e1c" opacity="0.4" />
+
+  <!-- Smooth Stylized Aesthetic Character Silhouette (Positioned organically on right edge) -->
+  <!-- Ambient Cyan Rim Lighting Glow -->
+  <path d="M 1260 1080 C 1260 860 1280 750 1340 640 C 1370 590 1410 540 1440 480 C 1470 420 1480 340 1440 280 C 1400 230 1330 250 1300 290 C 1270 330 1270 400 1260 450 C 1250 510 1220 580 1200 660 C 1170 770 1160 890 1150 1080 Z" fill="#0369a1" opacity="0.12" filter="url(#auraGlow)" />
+
+  <!-- Character Silhouette with Smooth Contours -->
+  <path d="
+    M 1160 1080 
+    C 1170 880 1180 770 1220 670 
+    C 1240 620 1270 560 1280 500 
+    C 1290 440 1290 380 1270 330 
+    C 1260 300 1250 270 1270 240 
+    C 1290 220 1320 220 1340 240 
+    C 1370 280 1370 330 1380 380 
+    C 1400 320 1430 270 1470 260 
+    C 1500 250 1530 270 1540 310 
+    C 1550 370 1510 430 1480 480 
+    C 1460 520 1440 560 1430 610 
+    C 1410 700 1420 800 1430 890 
+    C 1440 960 1450 1020 1460 1080 
+    Z" 
+    fill="#020409" 
+  />
+
+  <!-- Refined Cyan Rim Light along Silhouette Edge -->
+  <path d="
+    M 1220 670 
+    C 1240 620 1270 560 1280 500 
+    C 1290 440 1290 380 1270 330 
+    C 1260 300 1250 270 1270 240 
+    C 1290 220 1320 220 1340 240" 
+    stroke="url(#rimCyan)" 
+    stroke-width="3" 
+    stroke-linecap="round" 
+    fill="none" 
+    opacity="0.8" 
+  />
+
+  <!-- Subtle Horizon Base Overlay -->
+  <rect y="980" width="1920" height="100" fill="url(#horizonGlow)" />
+</svg>

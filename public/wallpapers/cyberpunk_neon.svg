@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%">
+  <defs>
+    <linearGradient id="cyberSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0b0217" />
+      <stop offset="50%" stop-color="#1e0836" />
+      <stop offset="80%" stop-color="#3b0764" />
+      <stop offset="100%" stop-color="#090014" />
+    </linearGradient>
+
+    <radialGradient id="synthSun" cx="50%" cy="55%" r="35%">
+      <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.8" />
+      <stop offset="40%" stop-color="#ec4899" stop-opacity="0.5" />
+      <stop offset="75%" stop-color="#a855f7" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#0b0217" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+
+    <filter id="cyberGlow">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#cyberSky)" />
+  <circle cx="960" cy="520" r="280" fill="url(#synthSun)" />
+
+  <!-- Neon Sun Horizontal Blinds Effect -->
+  <line x1="680" y1="460" x2="1240" y2="460" stroke="#1e0836" stroke-width="4" />
+  <line x1="690" y1="490" x2="1230" y2="490" stroke="#1e0836" stroke-width="6" />
+  <line x1="710" y1="525" x2="1210" y2="525" stroke="#1e0836" stroke-width="9" />
+  <line x1="740" y1="565" x2="1180" y2="565" stroke="#1e0836" stroke-width="12" />
+  <line x1="790" y1="610" x2="1130" y2="610" stroke="#1e0836" stroke-width="16" />
+
+  <!-- City Skyline Silhouette -->
+  <path d="M 0 780 L 120 780 L 120 700 L 190 700 L 190 740 L 260 740 L 260 660 L 330 660 L 330 780 L 440 780 L 440 680 L 520 680 L 520 780 L 680 780 L 680 640 L 750 640 L 750 780 L 880 780 L 880 670 L 960 670 L 960 780 L 1100 780 L 1100 630 L 1180 630 L 1180 780 L 1320 780 L 1320 690 L 1400 690 L 1400 750 L 1490 750 L 1490 650 L 1570 650 L 1570 780 L 1700 780 L 1700 710 L 1790 710 L 1790 780 L 1920 780 L 1920 1080 L 0 1080 Z" fill="#06000d" />
+
+  <!-- Neon Grid Floor Perspective -->
+  <g stroke="#06b6d4" stroke-width="1.2" opacity="0.35">
+    <line x1="960" y1="780" x2="0" y2="1080" />
+    <line x1="960" y1="780" x2="280" y2="1080" />
+    <line x1="960" y1="780" x2="560" y2="1080" />
+    <line x1="960" y1="780" x2="800" y2="1080" />
+    <line x1="960" y1="780" x2="960" y2="1080" />
+    <line x1="960" y1="780" x2="1120" y2="1080" />
+    <line x1="960" y1="780" x2="1360" y2="1080" />
+    <line x1="960" y1="780" x2="1640" y2="1080" />
+    <line x1="960" y1="780" x2="1920" y2="1080" />
+
+    <!-- Horizontal Lines -->
+    <line x1="0" y1="810" x2="1920" y2="810" />
+    <line x1="0" y1="850" x2="1920" y2="850" />
+    <line x1="0" y1="905" x2="1920" y2="905" />
+    <line x1="0" y1="975" x2="1920" y2="975" />
+    <line x1="0" y1="1060" x2="1920" y2="1060" />
+  </g>
+
+  <!-- Horizon Laser Line -->
+  <line x1="0" y1="780" x2="1920" y2="780" stroke="#f43f5e" stroke-width="2.5" filter="url(#cyberGlow)" opacity="0.8" />
+</svg>

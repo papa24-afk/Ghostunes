@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%">
+  <defs>
+    <radialGradient id="studioCenter" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#18181b" stop-opacity="0.8" />
+      <stop offset="60%" stop-color="#09090b" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#020202" stop-opacity="1" />
+    </radialGradient>
+
+    <linearGradient id="glassRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.15" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.02" />
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.1" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#studioCenter)" />
+
+  <!-- Elegant minimalist concentric glass rings -->
+  <circle cx="960" cy="480" r="380" fill="none" stroke="url(#glassRingGrad)" stroke-width="1.5" opacity="0.6" />
+  <circle cx="960" cy="480" r="540" fill="none" stroke="url(#glassRingGrad)" stroke-width="1" opacity="0.3" stroke-dasharray="4 8" />
+  <circle cx="960" cy="480" r="700" fill="none" stroke="url(#glassRingGrad)" stroke-width="1.5" opacity="0.2" />
+
+  <!-- Subtle Ambient Radial Glow Points -->
+  <circle cx="500" cy="300" r="250" fill="#06b6d4" opacity="0.04" />
+  <circle cx="1400" cy="600" r="300" fill="#8b5cf6" opacity="0.04" />
+</svg>
