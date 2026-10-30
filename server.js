@@ -634,10 +634,15 @@ app.get('/api/artwork/:id', (req, res) => {
   const id = req.params.id;
   const sanitizedId = String(id || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
   const possibleArtworkDirs = [
+    process.env.ARTWORK_DIR,
+    process.env.USER_DATA_PATH ? path.join(process.env.USER_DATA_PATH, 'artwork') : null,
     path.join(process.env.APPDATA || '', 'metrolist-web', 'artwork'),
-    path.join(process.env.APPDATA || '', 'Ghosttunes', 'artwork')
-  ];
+    path.join(process.env.APPDATA || '', 'Ghosttunes', 'artwork'),
+    path.join(process.cwd(), 'public', 'artworks'),
+    path.join(process.cwd(), 'dist', 'artworks')
+  ].filter(Boolean);
   for (const dir of possibleArtworkDirs) {
+    if (!fs.existsSync(dir)) continue;
     for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
       for (const name of [`${id}${ext}`, `${sanitizedId}${ext}`]) {
         const file = path.join(dir, name);

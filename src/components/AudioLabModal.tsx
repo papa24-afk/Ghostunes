@@ -78,17 +78,17 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
         const barWidth = (width / 64) - 1.5;
         let x = 0;
 
+        // Hoist gradient creation outside the loop to eliminate thousands of allocations per frame
+        const grad = ctx.createLinearGradient(0, height, 0, 0);
+        grad.addColorStop(0, '#f59e0b');
+        grad.addColorStop(0.7, '#f43f5e');
+        grad.addColorStop(1, '#ec4899');
+        ctx.fillStyle = grad;
+
         for (let i = 0; i < 64; i++) {
           const val = dataArray[i * 2] || 0;
           const barHeight = (val / 255) * (height - 10);
 
-          // Warm amber to rose gradient
-          const grad = ctx.createLinearGradient(0, height, 0, height - barHeight);
-          grad.addColorStop(0, '#f59e0b');
-          grad.addColorStop(0.7, '#f43f5e');
-          grad.addColorStop(1, '#ec4899');
-
-          ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.roundRect(x, height - barHeight, Math.max(2, barWidth), barHeight, [2, 2, 0, 0]);
           ctx.fill();

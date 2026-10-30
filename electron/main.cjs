@@ -110,7 +110,9 @@ async function ensureBackendServer() {
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
-        PORT: '3001'
+        PORT: '3001',
+        ARTWORK_DIR: artworkDir,
+        USER_DATA_PATH: userDataPath
       },
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -335,26 +337,38 @@ function setupIpcHandlers() {
     const track = database.getTrack(trackId);
     if (!track) return null;
     const exists = track.local_audio_path && fs.existsSync(track.local_audio_path);
+    const safeId = String(track.id || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
+    const directArtExists = (track.local_artwork_path && fs.existsSync(track.local_artwork_path)) ||
+      fs.existsSync(path.join(artworkDir, `${track.id}.jpg`)) ||
+      fs.existsSync(path.join(artworkDir, `${safeId}.jpg`));
+    const localArtUrl = directArtExists ? `http://127.0.0.1:3001/api/artwork/${track.id}` : track.thumbnail;
+
     return {
       ...track,
+      thumbnail: localArtUrl || track.thumbnail,
       isOfflinePlayable: !!exists,
       local_audio_url: exists ? `http://127.0.0.1:3001/api/stream/${track.id}` : null,
-      local_artwork_url: (track.local_artwork_path && fs.existsSync(track.local_artwork_path)) 
-        ? `http://127.0.0.1:3001/api/artwork/${track.id}` 
-        : track.thumbnail
+      local_artwork_url: localArtUrl
     };
   });
 
   ipcMain.handle('ghosttunes:get-downloaded-tracks', async () => {
     const tracks = database.getAllDownloadedTracks();
-    return tracks.filter(t => t.local_audio_path && fs.existsSync(t.local_audio_path)).map(t => ({
-      ...t,
-      isOfflinePlayable: true,
-      local_audio_url: `http://127.0.0.1:3001/api/stream/${t.id}`,
-      local_artwork_url: (t.local_artwork_path && fs.existsSync(t.local_artwork_path))
-        ? `http://127.0.0.1:3001/api/artwork/${t.id}`
-        : t.thumbnail
-    }));
+    return tracks.filter(t => t.local_audio_path && fs.existsSync(t.local_audio_path)).map(t => {
+      const safeId = String(t.id || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
+      const directArtExists = (t.local_artwork_path && fs.existsSync(t.local_artwork_path)) ||
+        fs.existsSync(path.join(artworkDir, `${t.id}.jpg`)) ||
+        fs.existsSync(path.join(artworkDir, `${safeId}.jpg`));
+      const localArtUrl = directArtExists ? `http://127.0.0.1:3001/api/artwork/${t.id}` : t.thumbnail;
+
+      return {
+        ...t,
+        thumbnail: localArtUrl || t.thumbnail,
+        isOfflinePlayable: true,
+        local_audio_url: `http://127.0.0.1:3001/api/stream/${t.id}`,
+        local_artwork_url: localArtUrl
+      };
+    });
   });
 
   ipcMain.handle('ghosttunes:delete-download', async (_event, trackId) => {

@@ -88,21 +88,24 @@ const CrispArtwork: React.FC<{
   className?: string;
   isDataSaver?: boolean;
 }> = ({ track, className = '', isDataSaver = false }) => {
-  const primaryUrl = isDataSaver 
-    ? getThumbnailArtwork(track.thumbnail) 
-    : getOptimizedArtwork(track.thumbnail, false);
+  const offlineUrl = track.local_artwork_url || (track.id ? `http://127.0.0.1:3001/api/artwork/${track.id}` : '');
+  const primaryUrl = track.local_artwork_url || (isDataSaver 
+    ? getThumbnailArtwork(track.thumbnail, track.id) 
+    : getOptimizedArtwork(track.thumbnail, false, track.id));
   const fallbackUrl = track.id ? `https://i.ytimg.com/vi/${track.id}/hqdefault.jpg` : '';
-  const [src, setSrc] = useState(primaryUrl || fallbackUrl);
+  const [src, setSrc] = useState(primaryUrl || offlineUrl || fallbackUrl);
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    const nextUrl = isDataSaver ? getThumbnailArtwork(track.thumbnail) : getOptimizedArtwork(track.thumbnail, false);
-    setSrc(nextUrl || fallbackUrl);
+    const nextUrl = track.local_artwork_url || (isDataSaver ? getThumbnailArtwork(track.thumbnail, track.id) : getOptimizedArtwork(track.thumbnail, false, track.id));
+    setSrc(nextUrl || offlineUrl || fallbackUrl);
     setHasError(false);
-  }, [track.thumbnail, track.id, isDataSaver, fallbackUrl]);
+  }, [track.thumbnail, track.local_artwork_url, track.id, isDataSaver, fallbackUrl, offlineUrl]);
 
   const handleError = () => {
-    if (fallbackUrl && src !== fallbackUrl) {
+    if (offlineUrl && src !== offlineUrl) {
+      setSrc(offlineUrl);
+    } else if (fallbackUrl && src !== fallbackUrl) {
       setSrc(fallbackUrl);
     } else {
       setHasError(true);
@@ -645,9 +648,15 @@ export const ExploreView: React.FC<Props> = ({
 
                     <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-800 border border-white/5 flex-shrink-0">
                       <img
-                        src={getOptimizedArtwork(t.thumbnail, isDataSaver)}
+                        src={t.local_artwork_url || getOptimizedArtwork(t.thumbnail, isDataSaver, t.id)}
                         alt=""
                         className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          if (t.id && !img.src.includes('/api/artwork/')) {
+                            img.src = `http://127.0.0.1:3001/api/artwork/${t.id}`;
+                          }
+                        }}
                       />
                     </div>
 
@@ -965,7 +974,17 @@ export const ExploreView: React.FC<Props> = ({
                   className="group flex flex-col p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.03] transition-all cursor-pointer"
                 >
                   <div className="aspect-square w-full rounded-lg overflow-hidden mb-2 bg-zinc-800">
-                    <img src={getOptimizedArtwork(track.thumbnail, isDataSaver)} alt="" className="w-full h-full object-cover" />
+                    <img 
+                      src={track.local_artwork_url || getOptimizedArtwork(track.thumbnail, isDataSaver, track.id)} 
+                      alt="" 
+                      className="w-full h-full object-cover" 
+                      onError={(e) => {
+                        const img = e.currentTarget;
+                        if (track.id && !img.src.includes('/api/artwork/')) {
+                          img.src = `http://127.0.0.1:3001/api/artwork/${track.id}`;
+                        }
+                      }}
+                    />
                   </div>
                   <p className="text-xs font-semibold text-white truncate">{track.title}</p>
                   <p 

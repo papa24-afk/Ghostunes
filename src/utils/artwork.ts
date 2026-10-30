@@ -1,18 +1,61 @@
 /**
  * Helper to obtain optimized album artwork from streaming providers and YouTube Music.
  * Supports web-first Data Saver mode to minimize byte transfers on mobile networks.
+ * Fully supports offline local artwork resolution for downloaded tracks in Electron/desktop mode.
  */
 
-export function getHighResArtwork(url?: string | null): string {
-  return getOptimizedArtwork(url, false);
+// Offline artwork URL registry mapping trackId -> local artwork URL
+const offlineArtworkRegistry = new Map<string, string>();
+
+/**
+ * Registers offline artwork URLs for downloaded tracks.
+ */
+export function registerOfflineArtworks(tracks: { id: string; thumbnail?: string; local_artwork_url?: string }[]): void {
+  tracks.forEach((t) => {
+    if (t.id) {
+      if (t.local_artwork_url) {
+        offlineArtworkRegistry.set(t.id, t.local_artwork_url);
+      } else if (t.thumbnail && (t.thumbnail.includes('/api/artwork/') || t.thumbnail.startsWith('ghost-media://'))) {
+        offlineArtworkRegistry.set(t.id, t.thumbnail);
+      } else {
+        offlineArtworkRegistry.set(t.id, `http://127.0.0.1:3001/api/artwork/${t.id}`);
+      }
+    }
+  });
 }
 
 /**
- * Returns optimized artwork URL respecting Data Saver settings.
- * On Data Saver mode, requests compact medium resolution (saves ~75-80% image bytes).
+ * Retrieves the local offline artwork URL for a track if available.
  */
-export function getOptimizedArtwork(url?: string | null, isDataSaver = false): string {
-  if (!url) return '';
+export function getOfflineArtworkUrl(trackId?: string | null): string | null {
+  if (!trackId) return null;
+  return offlineArtworkRegistry.get(trackId) || `http://127.0.0.1:3001/api/artwork/${trackId}`;
+}
+
+export function getHighResArtwork(url?: string | null, trackId?: string | null): string {
+  return getOptimizedArtwork(url, false, trackId);
+}
+
+/**
+ * Returns optimized artwork URL respecting Data Saver settings and offline mode.
+ */
+export function getOptimizedArtwork(url?: string | null, isDataSaver = false, trackId?: string | null): string {
+  if (!url) {
+    if (trackId && offlineArtworkRegistry.has(trackId)) {
+      return offlineArtworkRegistry.get(trackId)!;
+    }
+    return '';
+  }
+
+  // If already a local artwork URL or media protocol, return as-is
+  if (url.includes('/api/artwork/') || url.startsWith('ghost-media://') || url.startsWith('data:')) {
+    return url;
+  }
+
+  // If offline and track has registered offline artwork, prefer local artwork
+  if (trackId && offlineArtworkRegistry.has(trackId) && typeof navigator !== 'undefined' && !navigator.onLine) {
+    return offlineArtworkRegistry.get(trackId)!;
+  }
 
   // Google / YouTube Music CDN images:
   if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
@@ -51,8 +94,23 @@ export function getOptimizedArtwork(url?: string | null, isDataSaver = false): s
 /**
  * Ultra-compact thumbnail URL for search lists, queue rows, and drawer items.
  */
-export function getThumbnailArtwork(url?: string | null): string {
-  if (!url) return '';
+export function getThumbnailArtwork(url?: string | null, trackId?: string | null): string {
+  if (!url) {
+    if (trackId && offlineArtworkRegistry.has(trackId)) {
+      return offlineArtworkRegistry.get(trackId)!;
+    }
+    return '';
+  }
+
+  // If already a local artwork URL or media protocol, return as-is
+  if (url.includes('/api/artwork/') || url.startsWith('ghost-media://') || url.startsWith('data:')) {
+    return url;
+  }
+
+  // If offline and track has registered offline artwork, prefer local artwork
+  if (trackId && offlineArtworkRegistry.has(trackId) && typeof navigator !== 'undefined' && !navigator.onLine) {
+    return offlineArtworkRegistry.get(trackId)!;
+  }
 
   if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
     if (/=w\d+-h\d+/.test(url)) {

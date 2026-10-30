@@ -58,6 +58,8 @@ import { segmentParagraphLyrics, getChronologicalLyrics, findActiveLyricIndex } 
 import { GhostSkinProfile, getFallbackGhostSkin } from '../utils/ghostSkin';
 import { ExploreView } from './ExploreView';
 import { toggleDesktopFullscreen, subscribeFullscreenChange, openExternalLink } from '../services/desktopService';
+import ghostIcon from '../assets/icon.png';
+import ghostIconSvg from '../assets/icon.svg';
 
 interface Props {
   track: Track | null;
@@ -596,9 +598,12 @@ export const DesktopPlayerView: React.FC<Props> = ({
   // Safe current playback metadata
   const currentTitle = track?.title || (activeQueue[queueIndex]?.title ?? 'Timeless');
   const currentArtist = track?.artist || (activeQueue[queueIndex]?.artist ?? 'The Weeknd');
-  const currentArtwork = track?.thumbnail 
-    ? getOptimizedArtwork(track.thumbnail, isDataSaver) 
-    : getOptimizedArtwork(activeQueue[queueIndex]?.thumbnail, isDataSaver);
+  const activeCurrentTrack = track || activeQueue[queueIndex];
+  const activeCurrentArt = activeCurrentTrack?.local_artwork_url || 
+    (activeCurrentTrack && downloadedTrackIds?.has(activeCurrentTrack.id) ? `http://127.0.0.1:3001/api/artwork/${activeCurrentTrack.id}` : activeCurrentTrack?.thumbnail);
+  const currentArtwork = activeCurrentArt
+    ? getOptimizedArtwork(activeCurrentArt, isDataSaver, activeCurrentTrack?.id)
+    : '';
 
   // Compute wrapped offsets for continuous 3D shelf
   const N = activeQueue.length;
@@ -715,9 +720,12 @@ export const DesktopPlayerView: React.FC<Props> = ({
               aria-label="Ghosttunes Home"
             >
               <img 
-                src="/icon.png" 
+                src={ghostIcon} 
                 alt="Ghosttunes" 
                 className="w-5 h-5 sm:w-6 sm:h-6 mr-2 rounded-md object-contain shadow-sm shadow-[#9e2a40]/30 group-hover:scale-105 transition-transform" 
+                onError={(e) => {
+                  e.currentTarget.src = ghostIconSvg;
+                }}
               />
               <span className="text-[20px] sm:text-[23px] font-serif font-bold tracking-tight text-white group-hover:text-zinc-200 transition-colors">
                 Ghosttunes
@@ -1676,9 +1684,11 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 zIndex += 10;
               }
 
+              const itemArtUrl = item.local_artwork_url || 
+                (downloadedTrackIds?.has(item.id) ? `http://127.0.0.1:3001/api/artwork/${item.id}` : item.thumbnail);
               const artwork = isDataSaver
-                ? (isCenter ? getOptimizedArtwork(item.thumbnail, true) : getThumbnailArtwork(item.thumbnail))
-                : getHighResArtwork(item.thumbnail);
+                ? (isCenter ? getOptimizedArtwork(itemArtUrl, true, item.id) : getThumbnailArtwork(itemArtUrl, item.id))
+                : getHighResArtwork(itemArtUrl, item.id);
 
               return (
                 <div
@@ -1732,8 +1742,10 @@ export const DesktopPlayerView: React.FC<Props> = ({
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102"
                         onError={(e) => {
                           const img = e.currentTarget;
-                          if (!img.src.includes('ytimg.com')) {
-                            img.src = `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`;
+                          if (item.id && !img.src.includes('/api/artwork/')) {
+                            img.src = `http://127.0.0.1:3001/api/artwork/${item.id}`;
+                          } else {
+                            img.src = ghostIcon;
                           }
                         }}
                       />

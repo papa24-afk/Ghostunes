@@ -112,9 +112,9 @@ export const CinematicLyricsView: React.FC<Props> = ({
   const isProgrammaticScrollRef = useRef(false);
   const autoResumeTimeoutRef = useRef<any>(null);
 
-  const highResThumb = getOptimizedArtwork(track?.thumbnail, isDataSaver);
-  const prevThumb = prevTrack ? getOptimizedArtwork(prevTrack.thumbnail, isDataSaver) : highResThumb;
-  const nextThumb = nextTrack ? getOptimizedArtwork(nextTrack.thumbnail, isDataSaver) : highResThumb;
+  const highResThumb = getOptimizedArtwork(track?.local_artwork_url || track?.thumbnail, isDataSaver, track?.id);
+  const prevThumb = prevTrack ? getOptimizedArtwork(prevTrack.local_artwork_url || prevTrack.thumbnail, isDataSaver, prevTrack.id) : highResThumb;
+  const nextThumb = nextTrack ? getOptimizedArtwork(nextTrack.local_artwork_url || nextTrack.thumbnail, isDataSaver, nextTrack.id) : highResThumb;
 
   // Format time display
   const formatTime = (secs: number) => {

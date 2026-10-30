@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ghosttunes</string>
+    <string name="title_activity_main">Ghosttunes</string>
+    <string name="package_name">com.ghosttunes.app</string>
+    <string name="custom_url_scheme">com.ghosttunes.app</string>
+</resources>

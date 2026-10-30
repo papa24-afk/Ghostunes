@@ -67,3 +67,12 @@ desktop.ini
 *.njsproj
 *.sln
 *.sw?
+
+# Android build artifacts
+.gradle/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/capacitor-cordova-android-plugins/build/
+*.apk
+*.aab

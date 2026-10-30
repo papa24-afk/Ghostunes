@@ -82,14 +82,14 @@ export const AudioVisualizer: React.FC<Props> = ({ audioRef, isPlaying }) => {
       let barHeight;
       let x = 0;
 
+      // Reusable gradient per frame (avoids thousands of gradient allocations per second)
+      const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+      gradient.addColorStop(0, '#e11d48');
+      gradient.addColorStop(1, '#fb7185');
+      ctx.fillStyle = gradient;
+
       for (let i = 0; i < bufferLength; i++) {
         barHeight = Math.max(2, (dataArray[i] / 255) * canvas.height * 0.9);
-
-        const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
-        gradient.addColorStop(0, '#e11d48');
-        gradient.addColorStop(1, '#fb7185');
-
-        ctx.fillStyle = gradient;
         const w = Math.max(1.5, barWidth - 2);
         if (typeof ctx.roundRect === 'function') {
           ctx.beginPath();

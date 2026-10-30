@@ -3,6 +3,7 @@ import { Check, Sparkles, X } from 'lucide-react';
 import { Track, LyricLine, Playlist, HistoryItem, AutoplayMode } from './types';
 import { parseLrc, parseLyricsPayload, LyricFormat } from './utils/lyricsParser';
 import { DesktopPlayerView } from './components/DesktopPlayerView';
+import { MobilePlayerView } from './components/MobilePlayerView';
 import { CinematicLyricsView } from './components/CinematicLyricsView';
 import { PlaylistModal } from './components/PlaylistModal';
 import { CreatePlaylistModal } from './components/CreatePlaylistModal';
@@ -26,7 +27,7 @@ import {
   loadCustomWallpaper, 
   clearCustomWallpaper 
 } from './utils/wallpaperStorage';
-import { getOptimizedArtwork } from './utils/artwork';
+import { getOptimizedArtwork, registerOfflineArtworks } from './utils/artwork';
 import { GhostSkinProfile, deriveGhostSkinProfile, getFallbackGhostSkin } from './utils/ghostSkin';
 import { 
   TrackPalette, 
@@ -384,6 +385,20 @@ export function App() {
   const [isAppearanceModalOpen, setIsAppearanceModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
+
+  // Mobile Android environment detection (screen width <= 768px or native Capacitor)
+  const [isMobileScreen, setIsMobileScreen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth <= 768 || Boolean((window as any).Capacitor?.isNativePlatform?.());
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth <= 768 || Boolean((window as any).Capacitor?.isNativePlatform?.()));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleUpdateThemeSettings = (newSettings: ThemeSettings) => {
     setThemeSettings(newSettings);
@@ -776,6 +791,7 @@ export function App() {
       try {
         const tracks = await getAllDownloadedTracks();
         setDownloadedTrackIds(new Set(tracks.map(t => t.id)));
+        registerOfflineArtworks(tracks);
       } catch (err) {
         console.warn('[Desktop] Error loading downloaded tracks:', err);
       }
@@ -992,35 +1008,7 @@ export function App() {
     }
   };
 
-  // Real-time audio playback clock synchronizer
-  useEffect(() => {
-    let animId: number;
-    let lastReportedTime = -1;
-
-    const syncPlaybackClock = () => {
-      const audio = audioRef.current;
-      if (
-        audio &&
-        !audio.seeking &&
-        !isSeekingRef.current &&
-        typeof audio.currentTime === 'number' &&
-        !isNaN(audio.currentTime)
-      ) {
-        const curTime = audio.currentTime;
-        if (Math.abs(curTime - lastReportedTime) >= 0.05) {
-          lastReportedTime = curTime;
-          setCurrentTime(curTime);
-        }
-        if (typeof audio.duration === 'number' && !isNaN(audio.duration) && audio.duration > 0) {
-          setDuration(audio.duration);
-        }
-      }
-      animId = requestAnimationFrame(syncPlaybackClock);
-    };
-
-    animId = requestAnimationFrame(syncPlaybackClock);
-    return () => cancelAnimationFrame(animId);
-  }, []);
+  // Audio playback clock is event-driven via native HTML5 onTimeUpdate & onSeeked (zero CPU overhead)
 
   // Persist storage
   useEffect(() => {
@@ -1389,15 +1377,23 @@ export function App() {
 
     // Check if offline file exists in desktop SQLite
     let localAudioUrl = track.local_audio_url || null;
-    if (!localAudioUrl && isDesktopApp()) {
+    let localArtworkUrl = track.local_artwork_url || null;
+    if (isDesktopApp()) {
       try {
         const local = await getLocalTrack(track.id);
         if (local?.isOfflinePlayable && local.local_audio_url) {
           localAudioUrl = local.local_audio_url;
         }
+        if (local?.local_artwork_url) {
+          localArtworkUrl = local.local_artwork_url;
+        }
       } catch (e) {
         console.warn('[DesktopPlay] getLocalTrack notice:', e);
       }
+    }
+
+    if (localArtworkUrl && localArtworkUrl !== track.thumbnail) {
+      setCurrentTrack(prev => (prev && prev.id === track.id ? { ...prev, thumbnail: localArtworkUrl, local_artwork_url: localArtworkUrl } : prev));
     }
 
     // 1. Determine audio source URL (Local offline or Online streaming)
@@ -1989,7 +1985,7 @@ export function App() {
         <div className="absolute inset-0 bg-black/55 pointer-events-none" />
       </div>
 
-      {/* 2. FOREGROUND: DESKTOP PLAYER VIEW (Smoothly fades & scales when lyrics mode opens) */}
+      {/* 2. FOREGROUND: MOBILE NATIVE OR DESKTOP PLAYER VIEW (Smoothly fades & scales when lyrics mode opens) */}
       <div 
         className={`w-full h-full min-h-screen relative z-10 transition-all duration-500 ease-out ${
           showLyrics
@@ -1997,119 +1993,177 @@ export function App() {
             : 'opacity-100 scale-100 pointer-events-auto visible'
         }`}
       >
-        <DesktopPlayerView
-          track={currentTrack}
-          currentTime={currentTime}
-          duration={duration}
-          isPlaying={isPlaying}
-          lyrics={lyrics}
-          plainLyrics={plainLyrics}
-          loadingLyrics={loadingLyrics}
-          lyricsFormat={lyricsFormat}
-          plainStanzas={plainStanzas}
-          isInstrumental={isInstrumental}
-          onRetryLyrics={() => currentTrack && fetchLyrics(currentTrack, true)}
-          palette={currentPalette}
-          ghostSkin={ghostSkin}
-          onOpenAppearanceModal={() => setIsAppearanceModalOpen(true)}
-          onOpenAbout={() => setIsAboutModalOpen(true)}
-          hasUpdate={appUpdate?.status === 'available' || appUpdate?.status === 'downloaded'}
-          isDataSaver={dataSaverConfig.enabled}
-          onOpenDataSaver={() => setIsDataSaverModalOpen(true)}
-          queue={queue}
-          queueIndex={queueIndex}
-          volume={volume}
-          isMuted={isMuted}
-          isShuffle={isShuffle}
-          isRepeat={isRepeat}
-          isLiked={currentTrack ? favorites.some(t => String(t.id).trim() === String(currentTrack.id).trim()) : false}
-          wallpaperMode={wallpaperMode}
-          onSetWallpaperMode={handleSetWallpaperMode}
-          wallpaper={wallpaper}
-          isCustomWallpaper={wallpaperMode === 'custom' && wallpaper === 'custom'}
-          onSelectPreset={handleSelectPreset}
-          onUploadWallpaper={handleUploadWallpaper}
-          onResetWallpaper={handleResetWallpaper}
-          onSeek={handleSeek}
-          onPlayPause={togglePlayPause}
-          onNext={handleNext}
-          onPrev={handlePrev}
-          onPlayTrack={(t, q) => playTrack(t, q || queue)}
-          onToggleShuffle={() => setIsShuffle(!isShuffle)}
-          onToggleRepeat={cycleRepeat}
-          onVolumeChange={handleVolumeChange}
-          onToggleMute={toggleMute}
-          onToggleLike={() => currentTrack && toggleFavorite(currentTrack)}
-          onToggleFavorite={toggleFavorite}
-          onOpenLyrics={() => setShowLyrics(true)}
-          onGoHome={() => {
-            setCurrentView('home');
-            setShowLyrics(false);
-          }}
-          currentView={currentView}
-          onViewChange={(view) => setCurrentView(view)}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedGenre={selectedGenre}
-          onSelectGenre={(g) => {
-            setSearchQuery('');
-            fetchGenreTracks(g);
-          }}
-          searchResults={searchResults}
-          genreTracks={genreTracks}
-          searchLoading={searchLoading}
-          searchError={searchError}
-          onRetrySearch={() => searchQuery.trim() ? executeSearch(searchQuery) : fetchGenreTracks(selectedGenre)}
-          favorites={favorites}
-          playlists={playlists}
-          history={history}
-          onOpenAddToPlaylist={(t) => setPlaylistModalTrack(t)}
-          onAddToQueue={(t) => setQueue(prev => [...prev, t])}
-          onOpenImportModal={() => setIsImportModalOpen(true)}
-          onOpenBackupModal={() => setIsBackupModalOpen(true)}
-          onCreateNewPlaylist={() => setIsCreatePlaylistOpen(true)}
-          artistQuery={selectedArtistQuery}
-          onOpenArtist={handleOpenArtist}
-          onBackFromArtist={handleBackFromArtist}
-          onDeletePlaylist={deletePlaylist}
-          onRenamePlaylist={handleRenamePlaylist}
-          onRemoveTrackFromPlaylist={removeTrackFromPlaylist}
-          isOfflineMode={isOfflineMode}
-          onToggleOfflineMode={() => setIsOfflineMode(prev => !prev)}
-          onDownloadTrack={handleDownloadTrack}
-          onDownloadPlaylist={handleDownloadPlaylist}
-          downloadedTrackIds={downloadedTrackIds}
-          downloadingTrackIds={activeDownloadingTrackIds}
-          downloadingPlaylistIds={activeDownloadingPlaylistIds}
-          pausedDownloadingTrackIds={pausedDownloadingTrackIds}
-          pausedDownloadingPlaylistIds={pausedDownloadingPlaylistIds}
-          onTrackDeleted={handleTrackDeleted}
-          onToggleFloatingWidget={handleToggleFloatingWidget}
-          isWidgetActive={isDesktopWidgetActive || isInAppWidgetOpen}
-          onOpenGhostDj={() => setIsGhostDjOpen(true)}
-          onOpenAudioLab={() => setIsAudioLabOpen(true)}
-          onOpenListeningRoom={() => setIsListeningRoomOpen(true)}
-          onOpenPlaylistRescue={(p) => { setRescueTargetPlaylist(p); setIsPlaylistRescueOpen(true); }}
-          selectedPlaylistId={selectedPlaylistId}
-          onSelectPlaylist={setSelectedPlaylistId}
-          isAutoplayEnabled={autoplay}
-          onToggleAutoplay={() => setAutoplay(prev => !prev)}
-          autoplayMode={autoplayMode}
-          onChangeAutoplayMode={setAutoplayMode}
-          onRemoveFromQueue={handleRemoveFromQueue}
-          onResumeSession={(sessionTracks, index, time) => {
-            if (sessionTracks.length > 0) {
-              setQueue(sessionTracks);
-              setQueueIndex(index);
-              playTrack(sessionTracks[index] || sessionTracks[0]);
-              setTimeout(() => {
-                if (audioRef.current && time > 0) {
-                  audioRef.current.currentTime = time;
-                }
-              }, 400);
-            }
-          }}
-        />
+        {isMobileScreen ? (
+          <MobilePlayerView
+            track={currentTrack}
+            currentTime={currentTime}
+            duration={duration}
+            isPlaying={isPlaying}
+            lyrics={lyrics}
+            plainLyrics={plainLyrics}
+            loadingLyrics={loadingLyrics}
+            onRetryLyrics={() => currentTrack && fetchLyrics(currentTrack, true)}
+            queue={queue}
+            queueIndex={queueIndex}
+            volume={volume}
+            isMuted={isMuted}
+            isShuffle={isShuffle}
+            isRepeat={isRepeat}
+            isLiked={currentTrack ? favorites.some(t => String(t.id).trim() === String(currentTrack.id).trim()) : false}
+            onSeek={handleSeek}
+            onPlayPause={togglePlayPause}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            onPlayTrack={(t, q) => playTrack(t, q || queue)}
+            onToggleShuffle={() => setIsShuffle(!isShuffle)}
+            onToggleRepeat={cycleRepeat}
+            onToggleLike={() => currentTrack && toggleFavorite(currentTrack)}
+            onToggleFavorite={toggleFavorite}
+            onOpenLyrics={() => setShowLyrics(true)}
+            onOpenAbout={() => setIsAboutModalOpen(true)}
+            onOpenAppearanceModal={() => setIsAppearanceModalOpen(true)}
+            onOpenAudioLab={() => setIsAudioLabOpen(true)}
+            currentView={currentView}
+            onViewChange={(view) => setCurrentView(view)}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            selectedGenre={selectedGenre}
+            onSelectGenre={(g) => {
+              setSearchQuery('');
+              fetchGenreTracks(g);
+            }}
+            searchResults={searchResults}
+            genreTracks={genreTracks}
+            searchLoading={searchLoading}
+            searchError={searchError}
+            onRetrySearch={() => searchQuery.trim() ? executeSearch(searchQuery) : fetchGenreTracks(selectedGenre)}
+            favorites={favorites}
+            playlists={playlists}
+            history={history}
+            onOpenAddToPlaylist={(t) => setPlaylistModalTrack(t)}
+            onCreateNewPlaylist={() => setIsCreatePlaylistOpen(true)}
+            isOfflineMode={isOfflineMode}
+            onToggleOfflineMode={() => setIsOfflineMode(prev => !prev)}
+            onDownloadTrack={handleDownloadTrack}
+            downloadedTrackIds={downloadedTrackIds}
+            downloadingTrackIds={activeDownloadingTrackIds}
+            hasUpdate={appUpdate?.status === 'available' || appUpdate?.status === 'downloaded'}
+          />
+        ) : (
+          <DesktopPlayerView
+            track={currentTrack}
+            currentTime={currentTime}
+            duration={duration}
+            isPlaying={isPlaying}
+            lyrics={lyrics}
+            plainLyrics={plainLyrics}
+            loadingLyrics={loadingLyrics}
+            lyricsFormat={lyricsFormat}
+            plainStanzas={plainStanzas}
+            isInstrumental={isInstrumental}
+            onRetryLyrics={() => currentTrack && fetchLyrics(currentTrack, true)}
+            palette={currentPalette}
+            ghostSkin={ghostSkin}
+            onOpenAppearanceModal={() => setIsAppearanceModalOpen(true)}
+            onOpenAbout={() => setIsAboutModalOpen(true)}
+            hasUpdate={appUpdate?.status === 'available' || appUpdate?.status === 'downloaded'}
+            isDataSaver={dataSaverConfig.enabled}
+            onOpenDataSaver={() => setIsDataSaverModalOpen(true)}
+            queue={queue}
+            queueIndex={queueIndex}
+            volume={volume}
+            isMuted={isMuted}
+            isShuffle={isShuffle}
+            isRepeat={isRepeat}
+            isLiked={currentTrack ? favorites.some(t => String(t.id).trim() === String(currentTrack.id).trim()) : false}
+            wallpaperMode={wallpaperMode}
+            onSetWallpaperMode={handleSetWallpaperMode}
+            wallpaper={wallpaper}
+            isCustomWallpaper={wallpaperMode === 'custom' && wallpaper === 'custom'}
+            onSelectPreset={handleSelectPreset}
+            onUploadWallpaper={handleUploadWallpaper}
+            onResetWallpaper={handleResetWallpaper}
+            onSeek={handleSeek}
+            onPlayPause={togglePlayPause}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            onPlayTrack={(t, q) => playTrack(t, q || queue)}
+            onToggleShuffle={() => setIsShuffle(!isShuffle)}
+            onToggleRepeat={cycleRepeat}
+            onVolumeChange={handleVolumeChange}
+            onToggleMute={toggleMute}
+            onToggleLike={() => currentTrack && toggleFavorite(currentTrack)}
+            onToggleFavorite={toggleFavorite}
+            onOpenLyrics={() => setShowLyrics(true)}
+            onGoHome={() => {
+              setCurrentView('home');
+              setShowLyrics(false);
+            }}
+            currentView={currentView}
+            onViewChange={(view) => setCurrentView(view)}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            selectedGenre={selectedGenre}
+            onSelectGenre={(g) => {
+              setSearchQuery('');
+              fetchGenreTracks(g);
+            }}
+            searchResults={searchResults}
+            genreTracks={genreTracks}
+            searchLoading={searchLoading}
+            searchError={searchError}
+            onRetrySearch={() => searchQuery.trim() ? executeSearch(searchQuery) : fetchGenreTracks(selectedGenre)}
+            favorites={favorites}
+            playlists={playlists}
+            history={history}
+            onOpenAddToPlaylist={(t) => setPlaylistModalTrack(t)}
+            onAddToQueue={(t) => setQueue(prev => [...prev, t])}
+            onOpenImportModal={() => setIsImportModalOpen(true)}
+            onOpenBackupModal={() => setIsBackupModalOpen(true)}
+            onCreateNewPlaylist={() => setIsCreatePlaylistOpen(true)}
+            artistQuery={selectedArtistQuery}
+            onOpenArtist={handleOpenArtist}
+            onBackFromArtist={handleBackFromArtist}
+            onDeletePlaylist={deletePlaylist}
+            onRenamePlaylist={handleRenamePlaylist}
+            onRemoveTrackFromPlaylist={removeTrackFromPlaylist}
+            isOfflineMode={isOfflineMode}
+            onToggleOfflineMode={() => setIsOfflineMode(prev => !prev)}
+            onDownloadTrack={handleDownloadTrack}
+            onDownloadPlaylist={handleDownloadPlaylist}
+            downloadedTrackIds={downloadedTrackIds}
+            downloadingTrackIds={activeDownloadingTrackIds}
+            downloadingPlaylistIds={activeDownloadingPlaylistIds}
+            pausedDownloadingTrackIds={pausedDownloadingTrackIds}
+            pausedDownloadingPlaylistIds={pausedDownloadingPlaylistIds}
+            onTrackDeleted={handleTrackDeleted}
+            onToggleFloatingWidget={handleToggleFloatingWidget}
+            isWidgetActive={isDesktopWidgetActive || isInAppWidgetOpen}
+            onOpenGhostDj={() => setIsGhostDjOpen(true)}
+            onOpenAudioLab={() => setIsAudioLabOpen(true)}
+            onOpenListeningRoom={() => setIsListeningRoomOpen(true)}
+            onOpenPlaylistRescue={(p) => { setRescueTargetPlaylist(p); setIsPlaylistRescueOpen(true); }}
+            selectedPlaylistId={selectedPlaylistId}
+            onSelectPlaylist={setSelectedPlaylistId}
+            isAutoplayEnabled={autoplay}
+            onToggleAutoplay={() => setAutoplay(prev => !prev)}
+            autoplayMode={autoplayMode}
+            onChangeAutoplayMode={setAutoplayMode}
+            onRemoveFromQueue={handleRemoveFromQueue}
+            onResumeSession={(sessionTracks, index, time) => {
+              if (sessionTracks.length > 0) {
+                setQueue(sessionTracks);
+                setQueueIndex(index);
+                playTrack(sessionTracks[index] || sessionTracks[0]);
+                setTimeout(() => {
+                  if (audioRef.current && time > 0) {
+                    audioRef.current.currentTime = time;
+                  }
+                }, 400);
+              }
+            }}
+          />
+        )}
       </div>
 
       {/* 3. FOREGROUND: FULL-SCREEN CINEMATIC LYRICS MODE (Smoothly transitions in/out) */}

@@ -66,5 +66,6 @@ jobs:
           files: |
             release/Ghosttunes-Setup-*.exe
             release/Ghosttunes-Setup-*.exe.blockmap
+            release/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

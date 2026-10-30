@@ -1,7 +1,7 @@
 {
   "name": "metrolist-web",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Ghosttunes — Premium Music Player for Windows",
   "author": "D!g!†@L G#0$†",
   "main": "electron/main.cjs",
@@ -16,7 +16,8 @@
     "electron": "electron .",
     "desktop:dev": "concurrently \"npm run server\" \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build:desktop": "vite build && electron-builder --dir --config.electronDist=node_modules/electron/dist",
-    "build:installer": "vite build && electron-builder --win nsis --config.electronDist=node_modules/electron/dist"
+    "build:installer": "vite build && electron-builder --win nsis --config.electronDist=node_modules/electron/dist",
+    "build:apk": "vite build && cap sync android && cd android && gradlew.bat assembleDebug"
   },
   "build": {
     "appId": "com.ghosttunes.app",
@@ -65,6 +66,8 @@
     }
   },
   "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
     "@distube/ytdl-core": "^5.0.1",
     "cors": "^2.8.5",
     "electron-updater": "^6.8.11",
@@ -75,6 +78,7 @@
     "youtubei.js": "^18.1.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.1",

@@ -95,3 +95,59 @@ input[type="range"]::-webkit-slider-thumb {
     transform: none !important;
   }
 }
+
+
+/* ==============================================================================
+   Mobile & Native Android Performance Optimizations
+   ============================================================================== */
+
+html, body {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior-y: none;
+  user-select: none;
+  -webkit-user-select: none;
+  text-rendering: optimizeSpeed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Allow text selection only in interactive text fields */
+input, textarea, [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Force hardware composite layer for sticky/fixed elements and modal overlays */
+header, footer, nav, aside, dialog, [role="dialog"], .titlebar-drag-region {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* High-performance momentum scrolling on mobile */
+.overflow-y-auto, .overflow-x-auto, [data-scrollable="true"] {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* On mobile/touch screens: Eliminate laggy multi-pass Gaussian blur kernels.
+   Replace with sleek, razor-sharp dark charcoal/black surfaces. */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  .backdrop-blur-sm,
+  .backdrop-blur,
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl,
+  .backdrop-blur-2xl,
+  .backdrop-blur-3xl {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Deep opaque charcoal on mobile overlays for razor-sharp visual contrast */
+  .fixed.inset-0 {
+    background-color: #07070a !important;
+  }
+}

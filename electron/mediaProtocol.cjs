@@ -63,6 +63,19 @@ function setupMediaProtocol(database, mediaDir, artworkDir) {
             filePath = resolved;
           }
         }
+        if (!filePath) {
+          const sanitizedId = String(id || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
+          for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+            for (const name of [`${id}${ext}`, `${sanitizedId}${ext}`]) {
+              const directPath = path.join(artworkDir, name);
+              if (fs.existsSync(directPath)) {
+                filePath = path.resolve(directPath);
+                break;
+              }
+            }
+            if (filePath) break;
+          }
+        }
       }
 
       if (!filePath || !fs.existsSync(filePath)) {
