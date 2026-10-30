@@ -7,7 +7,7 @@
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
-    "test": "node test_desktop_engine.cjs",
+    "test": "node --experimental-sqlite test_desktop_engine.cjs",
     "typecheck": "tsc --noEmit",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "client": "vite",
