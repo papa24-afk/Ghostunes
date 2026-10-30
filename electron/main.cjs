@@ -11,7 +11,8 @@ const { AutoUpdaterManager } = require('./autoUpdaterManager.cjs');
 // Must register privileged schemes before app is ready
 registerPrivilegedSchemes();
 
-// Enable robust native touch event handling & touch drag-and-drop on Windows touchscreen displays
+// Enable robust native audio playback, touch handling & relaxed security for local streams
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('touch-events', 'enabled');
 app.commandLine.appendSwitch('enable-touch-drag-drop');
 app.commandLine.appendSwitch('disable-pinch');

@@ -2483,6 +2483,7 @@ export function App() {
       {/* Universal Native Audio Element for Local & Online Playback */}
       <audio
         ref={audioRef}
+        crossOrigin="anonymous"
         preload="auto"
         onTimeUpdate={(e) => {
           const t = e.currentTarget.currentTime;
