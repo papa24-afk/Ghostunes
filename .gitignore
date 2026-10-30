@@ -7,6 +7,9 @@ node_modules/
 dist/
 release/
 build/
+!build/icon.png
+!build/icon.svg
+!build/icon.icns
 *.exe
 *.blockmap
 *.zip

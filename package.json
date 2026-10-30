@@ -83,7 +83,7 @@
           ]
         }
       ],
-      "icon": "build/icon.png",
+      "icon": "build/icon.icns",
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
       "identity": null,
       "hardenedRuntime": false,

@@ -83,6 +83,21 @@ jobs:
       - name: Build web application
         run: npm run build
 
+      - name: Generate macOS ICNS icon
+        run: |
+          mkdir -p build/icon.iconset
+          sips -z 16 16     build/icon.png --out build/icon.iconset/icon_16x16.png
+          sips -z 32 32     build/icon.png --out build/icon.iconset/icon_16x16@2x.png
+          sips -z 32 32     build/icon.png --out build/icon.iconset/icon_32x32.png
+          sips -z 64 64     build/icon.png --out build/icon.iconset/icon_32x32@2x.png
+          sips -z 128 128   build/icon.png --out build/icon.iconset/icon_128x128.png
+          sips -z 256 256   build/icon.png --out build/icon.iconset/icon_128x128@2x.png
+          sips -z 256 256   build/icon.png --out build/icon.iconset/icon_256x256.png
+          sips -z 512 512   build/icon.png --out build/icon.iconset/icon_256x256@2x.png
+          sips -z 512 512   build/icon.png --out build/icon.iconset/icon_512x512.png
+          iconutil -c icns build/icon.iconset -o build/icon.icns
+          rm -rf build/icon.iconset
+
       - name: Package macOS DMG & ZIP
         run: npx electron-builder --mac dmg zip --publish never
         env:
@@ -134,6 +149,22 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ### 🎵 Ghosttunes Multi-Platform Release
+
+            #### 🍏 macOS Installation Note (Gatekeeper Bypass)
+            If macOS displays: *"Ghosttunes.app is damaged and can't be opened. You should move it to the Bin"* — the app is **not** damaged. This is Apple Gatekeeper blocking unsigned apps downloaded via web browsers.
+
+            **Quick 5-Second Fix:**
+            1. Drag **Ghosttunes.app** into your **Applications** folder from the DMG window.
+            2. Open **Terminal** (press `⌘ + Space`, type `Terminal`, hit Enter).
+            3. Run this single command:
+               ```bash
+               xattr -cr /Applications/Ghosttunes.app
+               ```
+            4. Launch Ghosttunes from Applications. It opens immediately!
+
+            *Alternative (no Terminal):* Open **System Settings** > **Privacy & Security** > scroll to **Security** > click **Open Anyway**.
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
