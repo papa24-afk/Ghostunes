@@ -42,7 +42,7 @@ jobs:
         run: npm run build
 
       - name: Package Windows Installer
-        run: npx electron-builder --win nsis --config.electronDist=node_modules/electron/dist
+        run: npx electron-builder --win nsis --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
