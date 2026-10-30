@@ -187,7 +187,7 @@ export const DownloadsView: React.FC<Props> = ({
               <button
                 onClick={() => openStorageFolder('media')}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.05] hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 transition-all cursor-pointer"
-                title="Open local media folder in Windows Explorer"
+                title="Open local media folder in Finder / File Explorer"
               >
                 <Folder className="w-4 h-4" />
                 <span className="hidden sm:inline">Folder</span>

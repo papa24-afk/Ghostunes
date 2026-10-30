@@ -32,8 +32,60 @@ export function getOfflineArtworkUrl(trackId?: string | null): string | null {
   return offlineArtworkRegistry.get(trackId) || `http://127.0.0.1:3001/api/artwork/${trackId}`;
 }
 
+/**
+ * Upgrades external music thumbnails to maximum crystal-clear resolution.
+ * - Google/YouTube Music: transforms =w...-h... into =w1080-h1080-l90-rj
+ * - YouTube standard: transforms hqdefault.jpg into maxresdefault.jpg
+ * - Apple Music: transforms ...x...bb. into 1000x1000bb.
+ */
+export function upgradeToHighResArtwork(url?: string | null): string {
+  if (!url || typeof url !== 'string') return '';
+
+  // Local or data URI
+  if (url.includes('/api/artwork/') || url.startsWith('ghost-media://') || url.startsWith('data:')) {
+    return url;
+  }
+
+  // Google / YouTube Music CDN images
+  if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
+    if (/=w\d+-h\d+/.test(url)) {
+      return url.replace(/=w\d+-h\d+[^?]*/, '=w1080-h1080-l90-rj');
+    }
+    if (/=s\d+/.test(url)) {
+      return url.replace(/=s\d+[^?]*/, '=s1080');
+    }
+    if (!url.includes('=')) {
+      return `${url}=w1080-h1080-l90-rj`;
+    }
+  }
+
+  // Apple Music / iTunes CDN images
+  if (url.includes('mzstatic.com')) {
+    return url.replace(/\/\d+x\d+bb\./, '/1000x1000bb.');
+  }
+
+  // Standard YouTube video thumbnails
+  if (url.includes('i.ytimg.com/vi/')) {
+    return url.replace(/\/(default|mqdefault|hqdefault|sddefault)\.jpg$/, '/maxresdefault.jpg');
+  }
+
+  return url;
+}
+
 export function getHighResArtwork(url?: string | null, trackId?: string | null): string {
-  return getOptimizedArtwork(url, false, trackId);
+  if (!url) {
+    if (trackId && offlineArtworkRegistry.has(trackId)) {
+      return offlineArtworkRegistry.get(trackId)!;
+    }
+    return '';
+  }
+
+  // If local URL, return it
+  if (url.includes('/api/artwork/') || url.startsWith('ghost-media://') || url.startsWith('data:')) {
+    return url;
+  }
+
+  return upgradeToHighResArtwork(url);
 }
 
 /**
@@ -57,38 +109,25 @@ export function getOptimizedArtwork(url?: string | null, isDataSaver = false, tr
     return offlineArtworkRegistry.get(trackId)!;
   }
 
-  // Google / YouTube Music CDN images:
-  if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
-    if (/=w\d+-h\d+/.test(url)) {
-      const sizeParam = isDataSaver ? '=w260-h260-l90-rj' : '=w544-h544-l90-rj';
-      return url.replace(/=w\d+-h\d+[^?]*/, sizeParam);
-    }
-    if (/=s\d+/.test(url)) {
-      const sizeParam = isDataSaver ? '=s300' : '=s600';
-      return url.replace(/=s\d+[^?]*/, sizeParam);
-    }
-  }
-
-  // Apple Music / iTunes CDN images
-  if (url.includes('mzstatic.com')) {
-    const sizeParam = isDataSaver ? '/300x300bb.' : '/600x600bb.';
-    return url.replace(/\/\d+x\d+bb\./, sizeParam);
-  }
-
-  // Standard YouTube video thumbnails
-  if (url.includes('i.ytimg.com/vi/')) {
-    if (isDataSaver) {
-      if (url.endsWith('/hqdefault.jpg')) {
-        return url.replace(/\/hqdefault\.jpg$/, '/mqdefault.jpg');
+  if (isDataSaver) {
+    if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
+      if (/=w\d+-h\d+/.test(url)) {
+        return url.replace(/=w\d+-h\d+[^?]*/, '=w260-h260-l90-rj');
       }
-    } else {
-      if (url.endsWith('/default.jpg') || url.endsWith('/mqdefault.jpg')) {
-        return url.replace(/\/(default|mqdefault)\.jpg$/, '/hqdefault.jpg');
+      if (/=s\d+/.test(url)) {
+        return url.replace(/=s\d+[^?]*/, '=s300');
       }
     }
+    if (url.includes('mzstatic.com')) {
+      return url.replace(/\/\d+x\d+bb\./, '/300x300bb.');
+    }
+    if (url.includes('i.ytimg.com/vi/')) {
+      return url.replace(/\/(default|mqdefault|hqdefault)\.jpg$/, '/mqdefault.jpg');
+    }
+    return url;
   }
 
-  return url;
+  return upgradeToHighResArtwork(url);
 }
 
 /**

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
 import ghostIcon from '../assets/icon.png';
+import { upgradeToHighResArtwork } from '../utils/artwork';
 
 interface Props {
   currentTrack: Track | null;
@@ -122,7 +123,9 @@ export const PlayerBar: React.FC<Props> = ({
               title="Click to open Now Playing"
             >
               <img
-                src={currentTrack.local_artwork_url || (isDownloaded ? `http://127.0.0.1:3001/api/artwork/${currentTrack.id}` : currentTrack.thumbnail)}
+                src={(typeof navigator === 'undefined' || navigator.onLine) && currentTrack.thumbnail && currentTrack.thumbnail.startsWith('http') && !currentTrack.thumbnail.includes('/api/artwork/')
+                  ? upgradeToHighResArtwork(currentTrack.thumbnail)
+                  : (currentTrack.local_artwork_url || (isDownloaded ? `http://127.0.0.1:3001/api/artwork/${currentTrack.id}` : currentTrack.thumbnail))}
                 alt={currentTrack.title}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                 onError={(e) => {

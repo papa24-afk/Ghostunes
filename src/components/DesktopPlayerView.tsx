@@ -51,7 +51,7 @@ import {
 import { DownloadsView } from './DownloadsView';
 import { MusicMemoryView } from './MusicMemoryView';
 import { ArtistProfileView } from './ArtistProfileView';
-import { getHighResArtwork, getOptimizedArtwork, getThumbnailArtwork } from '../utils/artwork';
+import { getHighResArtwork, getOptimizedArtwork, getThumbnailArtwork, upgradeToHighResArtwork } from '../utils/artwork';
 import { WALLPAPER_PRESETS } from '../utils/wallpaperStorage';
 import { TrackPalette, getFallbackPalette } from '../utils/palette';
 import { segmentParagraphLyrics, getChronologicalLyrics, findActiveLyricIndex } from '../utils/lyricsParser';
@@ -271,6 +271,11 @@ export const DesktopPlayerView: React.FC<Props> = ({
     }
     return false;
   });
+
+  const isMac = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return (window as any).electronAPI?.platform === 'darwin' || /Macintosh|Mac OS X/i.test(navigator.userAgent);
+  }, []);
 
   const [autoCollapseOnPlay, setAutoCollapseOnPlay] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -692,7 +697,9 @@ export const DesktopPlayerView: React.FC<Props> = ({
       {/* =========================================================================
           TOP EDITORIAL NAVIGATION BAR: Brand Wordmark, Tabs, Search & Quick Actions
          ========================================================================= */}
-      <header className="titlebar-drag-region relative z-30 w-full pl-6 sm:pl-10 pr-6 sm:pr-36 md:pr-40 pt-3.5 pb-2.5 flex items-center justify-between pointer-events-auto flex-shrink-0 bg-[#09090b]/90 backdrop-blur-md border-b border-white/[0.04]">
+      <header className={`titlebar-drag-region relative z-30 w-full ${
+        isMac ? 'pl-[84px] pr-6' : 'pl-6 sm:pl-10 pr-6 sm:pr-36 md:pr-40'
+      } pt-3.5 pb-2.5 flex items-center justify-between pointer-events-auto flex-shrink-0 bg-[#09090b]/90 backdrop-blur-md border-b border-white/[0.04]`}>
         {/* Left: Sidebar Toggle, Brand Wordmark & Primary Tabs */}
         <div className="flex items-center gap-4 sm:gap-6">
           {/* Sidebar Collapse / Expand Toggle Button */}
@@ -700,7 +707,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
             <button
               onClick={() => setIsSidebarCollapsed(prev => !prev)}
               className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-white/30"
-              title={isSidebarCollapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+              title={isSidebarCollapsed ? (isMac ? "Expand sidebar (⌘B)" : "Expand sidebar (Ctrl+B)") : (isMac ? "Collapse sidebar (⌘B)" : "Collapse sidebar (Ctrl+B)")}
               aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               {isSidebarCollapsed ? (
@@ -1581,7 +1588,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 <button
                   onClick={() => setIsSidebarCollapsed(true)}
                   className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
-                  title="Collapse sidebar (Ctrl+B)"
+                  title={isMac ? "Collapse sidebar (⌘B)" : "Collapse sidebar (Ctrl+B)"}
                 >
                   <PanelLeftClose className="w-3.5 h-3.5" />
                   <span>Collapse Sidebar</span>
@@ -1684,11 +1691,14 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 zIndex += 10;
               }
 
-              const itemArtUrl = item.local_artwork_url || 
-                (downloadedTrackIds?.has(item.id) ? `http://127.0.0.1:3001/api/artwork/${item.id}` : item.thumbnail);
+              const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+              const preferredArtUrl = (isOnline && item.thumbnail && item.thumbnail.startsWith('http') && !item.thumbnail.includes('/api/artwork/'))
+                ? upgradeToHighResArtwork(item.thumbnail)
+                : (item.local_artwork_url || (downloadedTrackIds?.has(item.id) ? `http://127.0.0.1:3001/api/artwork/${item.id}` : item.thumbnail));
+
               const artwork = isDataSaver
-                ? (isCenter ? getOptimizedArtwork(itemArtUrl, true, item.id) : getThumbnailArtwork(itemArtUrl, item.id))
-                : getHighResArtwork(itemArtUrl, item.id);
+                ? (isCenter ? getOptimizedArtwork(preferredArtUrl, true, item.id) : getThumbnailArtwork(preferredArtUrl, item.id))
+                : getHighResArtwork(preferredArtUrl, item.id);
 
               return (
                 <div

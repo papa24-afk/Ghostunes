@@ -4,6 +4,28 @@ const path = require('path');
 const { pipeline } = require('stream/promises');
 const { Readable } = require('stream');
 
+function upgradeArtworkUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
+    if (/=w\d+-h\d+/.test(url)) {
+      return url.replace(/=w\d+-h\d+[^?]*/, '=w1080-h1080-l90-rj');
+    }
+    if (/=s\d+/.test(url)) {
+      return url.replace(/=s\d+[^?]*/, '=s1080');
+    }
+    if (!url.includes('=')) {
+      return `${url}=w1080-h1080-l90-rj`;
+    }
+  }
+  if (url.includes('i.ytimg.com/vi/')) {
+    return url.replace(/\/(default|mqdefault|hqdefault|sddefault)\.jpg$/, '/maxresdefault.jpg');
+  }
+  if (url.includes('mzstatic.com')) {
+    return url.replace(/\/\d+x\d+bb\./, '/1000x1000bb.');
+  }
+  return url;
+}
+
 class DownloadManager {
   constructor(database, mediaDir, artworkDir, onProgressCallback) {
     this.database = database;
@@ -148,13 +170,19 @@ class DownloadManager {
     let totalBytes = 0;
 
     try {
-      // 1. Download artwork if available
-      if (artworkPath && !fs.existsSync(artworkPath)) {
+      // 1. Download artwork if available at highest resolution
+      if (artworkPath && (!fs.existsSync(artworkPath) || fs.statSync(artworkPath).size < 25000)) {
         try {
-          const artRes = await fetch(track.thumbnail, { signal: abortController.signal });
+          const highResUrl = upgradeArtworkUrl(track.thumbnail);
+          let artRes = await fetch(highResUrl, { signal: abortController.signal });
+          if (!artRes.ok && highResUrl !== track.thumbnail) {
+            artRes = await fetch(track.thumbnail, { signal: abortController.signal });
+          }
           if (artRes.ok) {
             const buf = await artRes.arrayBuffer();
-            fs.writeFileSync(artworkPath, Buffer.from(buf));
+            if (buf.byteLength > 1000) {
+              fs.writeFileSync(artworkPath, Buffer.from(buf));
+            }
           }
         } catch (e) {
           console.warn('[DownloadManager] Artwork download notice:', e.message);
@@ -255,7 +283,7 @@ class DownloadManager {
         artist: track.artist,
         album: track.album || '',
         duration: track.duration || 0,
-        thumbnail: track.thumbnail || '',
+        thumbnail: upgradeArtworkUrl(track.thumbnail) || '',
         local_audio_path: finalAudioPath,
         local_artwork_path: (artworkPath && fs.existsSync(artworkPath)) ? artworkPath : null,
         file_size: stats.size,

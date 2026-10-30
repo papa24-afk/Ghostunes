@@ -1,8 +1,8 @@
 {
   "name": "metrolist-web",
   "private": true,
-  "version": "1.0.3",
-  "description": "Ghosttunes — Premium Music Player for Windows",
+  "version": "1.0.4",
+  "description": "Ghosttunes — Premium Music Player for Windows & macOS",
   "author": "D!g!†@L G#0$†",
   "main": "electron/main.cjs",
   "type": "module",
@@ -15,8 +15,9 @@
     "build": "vite build",
     "electron": "electron .",
     "desktop:dev": "concurrently \"npm run server\" \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "build:desktop": "vite build && electron-builder --dir --config.electronDist=node_modules/electron/dist",
-    "build:installer": "vite build && electron-builder --win nsis --config.electronDist=node_modules/electron/dist",
+    "build:desktop": "vite build && electron-builder --dir",
+    "build:installer": "vite build && electron-builder --win nsis",
+    "build:mac": "vite build && electron-builder --mac",
     "build:apk": "vite build && cap sync android && cd android && gradlew.bat assembleDebug"
   },
   "build": {
@@ -63,6 +64,51 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Ghosttunes"
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "darkModeSupport": true,
+      "minimumSystemVersion": "10.15.0"
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "title": "${productName} ${version}",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     }
   },
   "dependencies": {

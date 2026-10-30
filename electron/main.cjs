@@ -25,6 +25,7 @@ let database = null;
 let downloadManager = null;
 let autoUpdaterManager = null;
 let backendProcess = null;
+let isQuitting = false;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -200,13 +201,25 @@ function createWindow() {
     };
   } else if (isMac) {
     windowOptions.titleBarStyle = 'hiddenInset';
+    windowOptions.trafficLightPosition = { x: 18, y: 16 };
   } else {
     windowOptions.frame = false;
   }
 
   mainWindow = new BrowserWindow(windowOptions);
-  mainWindow.setAutoHideMenuBar(true);
-  mainWindow.setMenuBarVisibility(false);
+  if (!isMac) {
+    mainWindow.setAutoHideMenuBar(true);
+    mainWindow.setMenuBarVisibility(false);
+  }
+
+  if (isMac) {
+    mainWindow.on('close', (e) => {
+      if (!isQuitting) {
+        e.preventDefault();
+        mainWindow.hide();
+      }
+    });
+  }
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
@@ -264,9 +277,9 @@ function createWindow() {
     }
   });
 
-  // Create clean minimal application menu
+  // Create clean minimal application menu (macOS HIG compliant + Windows/Linux)
   const template = [
-    {
+    ...(isMac ? [{
       label: 'Ghosttunes',
       submenu: [
         { 
@@ -275,14 +288,51 @@ function createWindow() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About Ghosttunes',
-              message: 'Ghosttunes 1.0.0\n\nDeveloped by D!g!†@L G#0$†\n\nPremium Music Experience for Windows with synced lyrics, offline downloads, and high-fidelity streaming.',
+              message: `Ghosttunes ${app.getVersion()}\n\nDeveloped by D!g!†@L G#0$†\n\nPremium Music Experience with synced lyrics, offline downloads, and high-fidelity streaming.`,
               buttons: ['OK']
             });
           }
         },
         { type: 'separator' },
-        { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() }
+        {
+          label: 'Check for Updates...',
+          click: () => {
+            if (autoUpdaterManager) {
+              autoUpdaterManager.checkForUpdates(false);
+            }
+          }
+        },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
       ]
+    }] : [
+      {
+        label: 'Ghosttunes',
+        submenu: [
+          { 
+            label: 'About Ghosttunes', 
+            click: () => {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'About Ghosttunes',
+                message: `Ghosttunes ${app.getVersion()}\n\nDeveloped by D!g!†@L G#0$†\n\nPremium Music Experience with synced lyrics, offline downloads, and high-fidelity streaming.`,
+                buttons: ['OK']
+              });
+            }
+          },
+          { type: 'separator' },
+          { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() }
+        ]
+      }
+    ]),
+    {
+      role: 'editMenu'
     },
     {
       label: 'View',
@@ -314,9 +364,72 @@ function createWindow() {
           }
         }
       ]
-    }
+    },
+    ...(isMac ? [{
+      role: 'windowMenu'
+    }] : [])
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function upgradeArtworkUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
+    if (/=w\d+-h\d+/.test(url)) {
+      return url.replace(/=w\d+-h\d+[^?]*/, '=w1080-h1080-l90-rj');
+    }
+    if (/=s\d+/.test(url)) {
+      return url.replace(/=s\d+[^?]*/, '=s1080');
+    }
+    if (!url.includes('=')) {
+      return `${url}=w1080-h1080-l90-rj`;
+    }
+  }
+  if (url.includes('i.ytimg.com/vi/')) {
+    return url.replace(/\/(default|mqdefault|hqdefault|sddefault)\.jpg$/, '/maxresdefault.jpg');
+  }
+  if (url.includes('mzstatic.com')) {
+    return url.replace(/\/\d+x\d+bb\./, '/1000x1000bb.');
+  }
+  return url;
+}
+
+async function healLowResArtworks(dir, db) {
+  if (!fs.existsSync(dir)) return;
+  try {
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+      if (!file.endsWith('.jpg')) continue;
+      const filePath = path.join(dir, file);
+      const stats = fs.statSync(filePath);
+      if (stats.size < 25000) {
+        const id = path.basename(file, '.jpg');
+        const track = db ? db.getTrack(id) : null;
+        const candidates = [];
+        if (track && track.thumbnail && !track.thumbnail.includes('/api/artwork/')) {
+          candidates.push(upgradeArtworkUrl(track.thumbnail));
+        }
+        candidates.push(`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`);
+        candidates.push(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`);
+
+        for (const url of candidates) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              const buf = await resp.arrayBuffer();
+              if (buf.byteLength > 25000) {
+                fs.writeFileSync(filePath, Buffer.from(buf));
+                logDesktop(`[ArtworkHealer] Upgraded ${id} from ${stats.size} bytes to ${buf.byteLength} bytes.`);
+                break;
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch (err) {
+    logDesktop('[ArtworkHealer] Error:', err.message);
+  }
 }
 
 // Setup IPC Handlers
@@ -345,7 +458,7 @@ function setupIpcHandlers() {
 
     return {
       ...track,
-      thumbnail: localArtUrl || track.thumbnail,
+      thumbnail: upgradeArtworkUrl(track.thumbnail) || localArtUrl,
       isOfflinePlayable: !!exists,
       local_audio_url: exists ? `http://127.0.0.1:3001/api/stream/${track.id}` : null,
       local_artwork_url: localArtUrl
@@ -363,7 +476,7 @@ function setupIpcHandlers() {
 
       return {
         ...t,
-        thumbnail: localArtUrl || t.thumbnail,
+        thumbnail: upgradeArtworkUrl(t.thumbnail) || localArtUrl,
         isOfflinePlayable: true,
         local_audio_url: `http://127.0.0.1:3001/api/stream/${t.id}`,
         local_artwork_url: localArtUrl
@@ -779,6 +892,7 @@ app.whenReady().then(async () => {
   }
   await ensureBackendServer();
   setupIpcHandlers();
+  healLowResArtworks(artworkDir, database).catch(() => {});
   autoUpdaterManager = new AutoUpdaterManager(logDesktop);
   createWindow();
   if (autoUpdaterManager) {
@@ -787,8 +901,18 @@ app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    } else if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('window-all-closed', () => {

@@ -346,7 +346,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span>MIT Licensed • Open Source</span>
           </div>
-          <span className="font-mono text-zinc-600">Electron • Windows</span>
+          <span className="font-mono text-zinc-600">
+            Electron • {typeof window !== 'undefined' && ((window as any).electronAPI?.platform === 'darwin' || /Macintosh|Mac OS X/i.test(navigator.userAgent)) ? 'macOS' : 'Windows'}
+          </span>
         </div>
       </div>
     </div>

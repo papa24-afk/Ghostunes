@@ -97,6 +97,67 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), timestamp: Date.now() });
 });
 
+function upgradeArtworkUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
+    if (/=w\d+-h\d+/.test(url)) {
+      return url.replace(/=w\d+-h\d+[^?]*/, '=w1080-h1080-l90-rj');
+    }
+    if (/=s\d+/.test(url)) {
+      return url.replace(/=s\d+[^?]*/, '=s1080');
+    }
+    if (!url.includes('=')) {
+      return `${url}=w1080-h1080-l90-rj`;
+    }
+  }
+  if (url.includes('i.ytimg.com/vi/')) {
+    return url.replace(/\/(default|mqdefault|hqdefault|sddefault)\.jpg$/, '/maxresdefault.jpg');
+  }
+  if (url.includes('mzstatic.com')) {
+    return url.replace(/\/\d+x\d+bb\./, '/1000x1000bb.');
+  }
+  return url;
+}
+
+function extractBestThumbnail(item, fallbackId) {
+  if (!item) return fallbackId ? `https://i.ytimg.com/vi/${fallbackId}/maxresdefault.jpg` : '';
+  const thumbs = item.thumbnails || item.thumbnail?.contents || item.thumbnail;
+  if (Array.isArray(thumbs) && thumbs.length > 0) {
+    const sorted = [...thumbs].sort((a, b) => (b.width || 0) - (a.width || 0));
+    const url = sorted[0]?.url || thumbs[thumbs.length - 1]?.url;
+    if (url) return upgradeArtworkUrl(url);
+  }
+  if (typeof thumbs === 'object' && thumbs?.url) {
+    return upgradeArtworkUrl(thumbs.url);
+  }
+  if (typeof item.thumbnail === 'string') {
+    return upgradeArtworkUrl(item.thumbnail);
+  }
+  if (fallbackId) {
+    return `https://i.ytimg.com/vi/${fallbackId}/maxresdefault.jpg`;
+  }
+  return '';
+}
+
+async function upgradeArtworkOnDisk(filePath, id) {
+  try {
+    const candidates = [
+      `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+      `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+    ];
+    for (const url of candidates) {
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const buf = await resp.arrayBuffer();
+        if (buf.byteLength > 25000) {
+          fs.writeFileSync(filePath, Buffer.from(buf));
+          break;
+        }
+      }
+    }
+  } catch {}
+}
+
 let yt;
 
 async function getInnertube() {
@@ -134,7 +195,7 @@ app.get('/api/home', async (req, res) => {
       album: song.album?.name || '',
       duration: song.duration?.text || '3:30',
       durationSeconds: song.duration?.seconds || 210,
-      thumbnail: song.thumbnails?.[song.thumbnails.length - 1]?.url || `https://i.ytimg.com/vi/${song.id}/hqdefault.jpg`
+      thumbnail: extractBestThumbnail(song, song.id)
     }));
 
     const responseData = { tracks };
@@ -169,7 +230,7 @@ app.get('/api/search', async (req, res) => {
       album: song.album?.name || '',
       duration: song.duration?.text || '3:30',
       durationSeconds: song.duration?.seconds || 210,
-      thumbnail: song.thumbnails?.[song.thumbnails.length - 1]?.url || `https://i.ytimg.com/vi/${song.id}/hqdefault.jpg`
+      thumbnail: extractBestThumbnail(song, song.id)
     }));
 
     const responseData = { results: songs };
@@ -209,7 +270,7 @@ app.get('/api/related', async (req, res) => {
           album: song.album?.name || '',
           duration: song.duration?.text || '3:30',
           durationSeconds: song.duration?.seconds || 210,
-          thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+          thumbnail: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`
         };
       })
       .filter(t => t && t.id !== videoId)
@@ -245,7 +306,7 @@ app.get('/api/genre', async (req, res) => {
       album: song.album?.name || '',
       duration: song.duration?.text || '3:30',
       durationSeconds: song.duration?.seconds || 210,
-      thumbnail: song.thumbnails?.[song.thumbnails.length - 1]?.url || `https://i.ytimg.com/vi/${song.id}/hqdefault.jpg`
+      thumbnail: extractBestThumbnail(song, song.id)
     }));
 
     const responseData = { tracks: songs };
@@ -307,9 +368,8 @@ app.get('/api/artist', async (req, res) => {
       const artistName = header.title?.text || resolvedName || 'Unknown Artist';
       
       // Extract highest resolution banner & avatar
-      const thumbContents = header.thumbnail?.contents || [];
-      const banner = thumbContents[0]?.url || '';
-      const avatar = thumbContents[thumbContents.length - 1]?.url || banner || '';
+      const banner = extractBestThumbnail(header, '');
+      const avatar = banner;
       
       const description = header.description?.text || '';
       const subscribers = header.subscribers?.text || '';
@@ -328,7 +388,7 @@ app.get('/api/artist', async (req, res) => {
           for (const item of (section.contents || [])) {
             const trackId = item.id || item.video_id;
             if (!trackId) continue;
-            const songThumb = item.thumbnail?.[0]?.url || item.thumbnail?.contents?.[0]?.url || `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`;
+            const songThumb = extractBestThumbnail(item, trackId);
             topTracks.push({
               id: trackId,
               title: item.title?.text || item.title || 'Unknown Title',
@@ -346,7 +406,7 @@ app.get('/api/artist', async (req, res) => {
           for (const item of (section.contents || [])) {
             const albumId = item.id || item.endpoint?.payload?.browseId;
             if (!albumId) continue;
-            const albumThumb = item.thumbnail?.[0]?.url || item.thumbnail?.contents?.[0]?.url || item.thumbnails?.[0]?.url || '';
+            const albumThumb = extractBestThumbnail(item, albumId);
             albums.push({
               id: albumId,
               title: item.title?.text || item.title || 'Untitled Album',
@@ -361,7 +421,7 @@ app.get('/api/artist', async (req, res) => {
           for (const item of (section.contents || [])) {
             const singleId = item.id || item.endpoint?.payload?.browseId;
             if (!singleId) continue;
-            const singleThumb = item.thumbnail?.[0]?.url || item.thumbnail?.contents?.[0]?.url || item.thumbnails?.[0]?.url || '';
+            const singleThumb = extractBestThumbnail(item, singleId);
             singles.push({
               id: singleId,
               title: item.title?.text || item.title || 'Untitled Single',
@@ -377,7 +437,7 @@ app.get('/api/artist', async (req, res) => {
             const relId = item.id || item.endpoint?.payload?.browseId;
             const relName = item.title?.text || item.title || item.name;
             if (!relName) continue;
-            const relThumb = item.thumbnail?.[0]?.url || item.thumbnail?.contents?.[0]?.url || item.thumbnails?.[0]?.url || '';
+            const relThumb = extractBestThumbnail(item, relId);
             similarArtists.push({
               id: relId || '',
               name: relName,
@@ -414,7 +474,7 @@ app.get('/api/artist', async (req, res) => {
       album: song.album?.name || '',
       duration: song.duration?.text || '3:30',
       durationSeconds: song.duration?.seconds || 210,
-      thumbnail: song.thumbnails?.[song.thumbnails.length - 1]?.url || `https://i.ytimg.com/vi/${song.id}/hqdefault.jpg`
+      thumbnail: extractBestThumbnail(song, song.id)
     }));
 
     const fallbackPayload = {
@@ -462,8 +522,7 @@ app.get('/api/album', async (req, res) => {
     const artist = header.strapline_text_one?.text || header.artists?.[0]?.name || 'Unknown Artist';
     const year = header.subtitle?.text?.match(/\b(19\d\d|20\d\d)\b/)?.[0] || '';
     const description = header.description?.description?.text || header.description?.text || '';
-    const thumbContents = header.thumbnail?.contents || [];
-    const thumbnail = thumbContents[0]?.url || thumbContents[thumbContents.length - 1]?.url || '';
+    const thumbnail = extractBestThumbnail(header, '');
     const secondSubtitle = header.second_subtitle?.text || '';
 
     const tracks = (album.contents || []).map((t, idx) => {
@@ -476,7 +535,7 @@ app.get('/api/album', async (req, res) => {
         album: title,
         duration: t.duration?.text || '3:30',
         durationSeconds: t.duration?.seconds || 210,
-        thumbnail: thumbnail || `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`
+        thumbnail: thumbnail || extractBestThumbnail(t, trackId)
       };
     }).filter(Boolean);
 
@@ -629,7 +688,7 @@ app.get('/api/stream/:id', async (req, res) => {
   }
 });
 
-// 3.1 Offline Artwork Serving Endpoint with full disk cache lookup
+// 3.1 Offline Artwork Serving Endpoint with full disk cache lookup & auto-upgrade
 app.get('/api/artwork/:id', (req, res) => {
   const id = req.params.id;
   const sanitizedId = String(id || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
@@ -647,6 +706,10 @@ app.get('/api/artwork/:id', (req, res) => {
       for (const name of [`${id}${ext}`, `${sanitizedId}${ext}`]) {
         const file = path.join(dir, name);
         if (fs.existsSync(file)) {
+          const stats = fs.statSync(file);
+          if (stats.size < 25000 && !file.includes('.part')) {
+            upgradeArtworkOnDisk(file, id).catch(() => {});
+          }
           res.setHeader('Access-Control-Allow-Origin', '*');
           res.setHeader('Cache-Control', 'public, max-age=86400');
           return res.sendFile(file);
@@ -654,7 +717,27 @@ app.get('/api/artwork/:id', (req, res) => {
       }
     }
   }
-  res.status(404).send('Artwork not found');
+
+  // If not on disk, stream live high-res thumbnail
+  const liveCandidates = [
+    `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+    `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+  ];
+  (async () => {
+    for (const candidate of liveCandidates) {
+      try {
+        const liveRes = await fetch(candidate);
+        if (liveRes.ok) {
+          const buf = await liveRes.arrayBuffer();
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Content-Type', 'image/jpeg');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          return res.send(Buffer.from(buf));
+        }
+      } catch {}
+    }
+    res.status(404).send('Artwork not found');
+  })();
 });
 
 // Dedicated audio download endpoint for full track downloads (Desktop app & browser downloads)
