@@ -279,13 +279,21 @@ export function App() {
     return () => unsub();
   }, [isStandaloneMiniWidget]);
 
-  // Playback state: pre-seeded with iconic reference tracks for instantaneous 3D shelf display
-  const [currentTrack, setCurrentTrack] = useState<Track | null>(DEFAULT_TRACKS[0]);
-  const [queue, setQueue] = useState<Track[]>(DEFAULT_TRACKS);
-  const [queueIndex, setQueueIndex] = useState(0);
+  const [initialSession] = useState(() => musicMemory.getSavedSessionSnapshot());
+
+  // Restore the last queue without starting audio until the user presses Play.
+  const [currentTrack, setCurrentTrack] = useState<Track | null>(initialSession?.queue[initialSession.currentIndex] || DEFAULT_TRACKS[0]);
+  const [queue, setQueue] = useState<Track[]>(initialSession?.queue || DEFAULT_TRACKS);
+  const [queueIndex, setQueueIndex] = useState(initialSession?.currentIndex || 0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(DEFAULT_TRACKS[0].durationSeconds || 256);
+  const [currentTime, setCurrentTime] = useState(initialSession?.currentTime || 0);
+  const [playbackStatus, setPlaybackStatus] = useState('idle');
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const playRequestRef = useRef(0);
+  const pendingResumeRef = useRef(initialSession?.currentTime || 0);
+  const snapshotRef = useRef({ queue, queueIndex, currentTime });
+  snapshotRef.current = { queue, queueIndex, currentTime };
+  const [duration, setDuration] = useState(initialSession?.queue[initialSession.currentIndex]?.durationSeconds || DEFAULT_TRACKS[0].durationSeconds || 256);
   const [volume, setVolume] = useState(0.8);
   const [isMuted, setIsMuted] = useState(false);
   const [isRepeat, setIsRepeat] = useState<boolean | 'one'>(false);
@@ -580,7 +588,7 @@ export function App() {
   };
 
   // Views & Editorial Navigation
-  const [currentView, setCurrentView] = useState<'home' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist'>('home');
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [downloadedTrackIds, setDownloadedTrackIds] = useState<Set<string>>(new Set());
   const [activeDownloadingTrackIds, setActiveDownloadingTrackIds] = useState<Set<string>>(new Set());
@@ -592,7 +600,7 @@ export function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
   const [selectedArtistQuery, setSelectedArtistQuery] = useState<{ id?: string; name: string } | null>(null);
-  const navHistoryRef = useRef<Array<'home' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist'>>(['home']);
+  const navHistoryRef = useRef<Array<'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist'>>(['home']);
 
   const handleOpenArtist = (name: string, id?: string) => {
     if (!name || !name.trim()) return;
@@ -777,7 +785,6 @@ export function App() {
   const isSeekingRef = useRef(false);
   const seekTimeoutRef = useRef<any>(null);
   const isLocalActiveRef = useRef(false);
-  const fallbackAttemptedRef = useRef<Set<string>>(new Set());
   const isRepeatRef = useRef(isRepeat);
   isRepeatRef.current = isRepeat;
   const autoplayRef = useRef(autoplay);
@@ -1227,6 +1234,21 @@ export function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [dataSaverConfig.enabled]);
 
+  useEffect(() => {
+    const checkpoint = () => {
+      const snapshot = snapshotRef.current;
+      if (snapshot.queue.length) musicMemory.saveSessionSnapshot(snapshot.queue, snapshot.queueIndex,
+        pendingResumeRef.current || (audioRef.current?.src ? audioRef.current.currentTime : snapshot.currentTime));
+    };
+    const timer = window.setInterval(checkpoint, 5000);
+    const onExit = () => { checkpoint(); musicMemory.flushCurrentTrackRecord(); };
+    const onVisibility = () => { if (document.hidden) onExit(); };
+    window.addEventListener('pagehide', onExit);
+    window.addEventListener('beforeunload', onExit);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { clearInterval(timer); window.removeEventListener('pagehide', onExit); window.removeEventListener('beforeunload', onExit); document.removeEventListener('visibilitychange', onVisibility); };
+  }, []);
+
   // Smart Autoplay recommendations handler
   const triggerAutoplayBatch = async (trackToContinueFrom: Track): Promise<boolean> => {
     if (isAutoplayFetchingRef.current) return false;
@@ -1271,7 +1293,7 @@ export function App() {
     if (isShuffle) {
       const nextIndex = Math.floor(Math.random() * queue.length);
       setQueueIndex(nextIndex);
-      playTrack(queue[nextIndex], queue);
+      playTrack(queue[nextIndex], queue, 0, nextIndex);
       return;
     }
 
@@ -1280,7 +1302,7 @@ export function App() {
     // Normal queue advance: user still has tracks queued
     if (nextIndex < queue.length) {
       setQueueIndex(nextIndex);
-      playTrack(queue[nextIndex], queue);
+      playTrack(queue[nextIndex], queue, 0, nextIndex);
       return;
     }
 
@@ -1314,20 +1336,38 @@ export function App() {
   // Queue track removal handler
   const handleRemoveFromQueue = (trackId: string, index: number) => {
     autoplayRejectedIdsRef.current.add(trackId);
-    setQueue(prev => {
-      const nextQueue = prev.filter((_, idx) => idx !== index);
-      if (index < queueIndex) {
-        setQueueIndex(prevIdx => Math.max(0, prevIdx - 1));
-      } else if (index === queueIndex) {
-        if (nextQueue.length > 0) {
-          const nextIdx = Math.min(queueIndex, nextQueue.length - 1);
-          setQueueIndex(nextIdx);
-          playTrack(nextQueue[nextIdx], nextQueue);
-        } else {
-          setIsPlaying(false);
-        }
+    const nextQueue = queue.filter((_, itemIndex) => itemIndex !== index);
+    if (index === queueIndex && nextQueue.length) {
+      const nextIndex = Math.min(queueIndex, nextQueue.length - 1);
+      playTrack(nextQueue[nextIndex], nextQueue, 0, nextIndex);
+    } else {
+      setQueue(nextQueue);
+      setQueueIndex(previous => index < previous ? previous - 1 : Math.min(previous, Math.max(0, nextQueue.length - 1)));
+      if (!nextQueue.length) {
+        ++playRequestRef.current;
+        audioRef.current?.pause();
+        audioRef.current?.removeAttribute('src');
+        audioRef.current?.load();
+        musicMemory.onTrackChange(null);
+        setCurrentTrack(null);
+        setCurrentTime(0);
+        setDuration(0);
+        setIsPlaying(false);
+        setPlaybackStatus('idle');
+        setPlaybackError(null);
+        localStorage.removeItem('ghost_interrupted_session');
       }
-      return nextQueue;
+    }
+  };
+
+  const handleMoveQueueTrack = (from: number, to: number) => {
+    if (from <= queueIndex || to <= queueIndex || from === to) return;
+    setQueue(previous => {
+      if (from >= previous.length || to >= previous.length) return previous;
+      const next = [...previous];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
     });
   };
 
@@ -1341,30 +1381,32 @@ export function App() {
 
     const prevIndex = queueIndex - 1 < 0 ? queue.length - 1 : queueIndex - 1;
     setQueueIndex(prevIndex);
-    playTrack(queue[prevIndex], queue);
+    playTrack(queue[prevIndex], queue, 0, prevIndex);
   };
   handlePrevRef.current = handlePrev;
 
   // Play a selected track
-  const playTrack = async (track: Track, newQueue?: Track[]) => {
+  const playTrack = async (track: Track, newQueue?: Track[], startAt = 0, exactIndex?: number) => {
+    const request = ++playRequestRef.current;
+    const isSameTrack = currentTrackRef.current?.id === track.id;
+    audioRef.current?.pause();
+    audioRef.current?.removeAttribute('src');
+    audioRef.current?.load();
+    setIsPlaying(false);
+    setPlaybackStatus('loading');
+    setPlaybackError(null);
+    currentTrackRef.current = track;
     setCurrentTrack(track);
+    musicMemory.onTrackChange(track, track.durationSeconds || 210);
     sessionPlayedIdsRef.current.add(track.id);
+    const nextQueue = newQueue || (queue.some(item => item.id === track.id) ? queue : [...queue, track]);
+    const nextIndex = exactIndex ?? Math.max(0, nextQueue.findIndex(item => item.id === track.id));
+    setQueue(nextQueue);
+    setQueueIndex(nextIndex);
+    pendingResumeRef.current = startAt;
+    musicMemory.saveSessionSnapshot(nextQueue, nextIndex, startAt);
 
-    if (newQueue) {
-      setQueue(newQueue);
-      const idx = newQueue.findIndex(t => t.id === track.id);
-      setQueueIndex(idx !== -1 ? idx : 0);
-    } else {
-      const idx = queue.findIndex(t => t.id === track.id);
-      if (idx !== -1) {
-        setQueueIndex(idx);
-      } else {
-        setQueue(prev => [...prev, track]);
-        setQueueIndex(queue.length);
-      }
-    }
-
-    setCurrentTime(0);
+    setCurrentTime(startAt);
     setDuration(track.durationSeconds || 210);
 
     // Record into history
@@ -1372,8 +1414,6 @@ export function App() {
       const filtered = prev.filter(item => item.track.id !== track.id);
       return [{ track, playedAt: Date.now() }, ...filtered].slice(0, 50);
     });
-
-    const isSameTrack = currentTrackRef.current?.id === track.id;
 
     // Check if offline file exists in desktop SQLite
     let localAudioUrl = track.local_audio_url || null;
@@ -1392,6 +1432,8 @@ export function App() {
       }
     }
 
+    if (request !== playRequestRef.current) return;
+
     if (localArtworkUrl && localArtworkUrl !== track.thumbnail) {
       setCurrentTrack(prev => (prev && prev.id === track.id ? { ...prev, thumbnail: localArtworkUrl, local_artwork_url: localArtworkUrl } : prev));
     }
@@ -1407,6 +1449,8 @@ export function App() {
       console.warn('[Playback] Cannot stream online track while in Offline Mode:', track.title);
       isLocalActiveRef.current = false;
       setIsPlaying(false);
+      setPlaybackStatus('error');
+      setPlaybackError('This song is not available offline. Connect to the internet or choose a local song.');
       return;
     } else {
       audioSourceUrl = getApiUrl(`/api/stream/${track.id}`);
@@ -1421,8 +1465,6 @@ export function App() {
       audioRef.current.volume = isMuted ? 0 : volume;
       audioRef.current.muted = isMuted;
 
-      musicMemory.onTrackChange(track, track.durationSeconds || 210);
-
       // Broadcast to listening room if host
       const activeRoom = listeningRooms.getActiveRoom();
       if (activeRoom.roomId && activeRoom.isHost) {
@@ -1430,14 +1472,14 @@ export function App() {
       }
 
       audioRef.current.play().then(() => {
-        setIsPlaying(true);
+        if (request === playRequestRef.current) setIsPlaying(true);
       }).catch(err => {
-        console.warn('[Audio] Play error:', err.message);
+        if (request !== playRequestRef.current || err.name === 'AbortError') return;
+        setIsPlaying(false);
+        setPlaybackStatus('error');
+        setPlaybackError(err.name === 'NotAllowedError' ? 'Press Play to allow audio playback.' : 'Unable to play this song. Try again or choose another song.');
       });
     }
-
-    // Save session recovery snapshot
-    musicMemory.saveSessionSnapshot(newQueue || queue, queueIndex, 0, track.title);
 
     // Fetch live lyrics for this track if not already loaded
     if (!isSameTrack || (!lyrics.length && !plainLyrics)) {
@@ -1450,7 +1492,7 @@ export function App() {
     const audio = audioRef.current;
     if (!audio) return;
     if (!audio.src && currentTrack) {
-      playTrack(currentTrack);
+      playTrack(currentTrack, queue, currentTime, queueIndex);
       return;
     }
 
@@ -1460,11 +1502,14 @@ export function App() {
     if (audio.paused) {
       audio.play().then(() => {
         setIsPlaying(true);
-        musicMemory.onPlaybackStateChange(true, audio.currentTime);
         if (activeRoom.roomId && activeRoom.isHost) {
           listeningRooms.sendAction('play', { time: audio.currentTime });
         }
-      }).catch(() => {});
+      }).catch(err => {
+        if (err.name === 'AbortError') return;
+        setPlaybackStatus('error');
+        setPlaybackError('Playback could not start. Try again.');
+      });
     } else {
       audio.pause();
       setIsPlaying(false);
@@ -2051,6 +2096,7 @@ export function App() {
           />
         ) : (
           <DesktopPlayerView
+            keyboardShortcutsEnabled={!showLyrics}
             track={currentTrack}
             currentTime={currentTime}
             duration={duration}
@@ -2150,17 +2196,15 @@ export function App() {
             autoplayMode={autoplayMode}
             onChangeAutoplayMode={setAutoplayMode}
             onRemoveFromQueue={handleRemoveFromQueue}
+            onMoveQueueTrack={handleMoveQueueTrack}
+            onPlayQueueTrack={index => { if (queue[index]) playTrack(queue[index], queue, 0, index); }}
+            playbackStatus={playbackStatus}
+            playbackError={playbackError}
+            onRetryPlayback={() => currentTrack && playTrack(currentTrack, queue, currentTime, queueIndex)}
             onResumeSession={(sessionTracks, index, time) => {
-              if (sessionTracks.length > 0) {
-                setQueue(sessionTracks);
-                setQueueIndex(index);
-                playTrack(sessionTracks[index] || sessionTracks[0]);
-                setTimeout(() => {
-                  if (audioRef.current && time > 0) {
-                    audioRef.current.currentTime = time;
-                  }
-                }, 400);
-              }
+              if (!sessionTracks.length) return;
+              const safeIndex = Math.max(0, Math.min(index, sessionTracks.length - 1));
+              playTrack(sessionTracks[safeIndex], sessionTracks, time, safeIndex);
             }}
           />
         )}
@@ -2168,6 +2212,7 @@ export function App() {
 
       {/* 3. FOREGROUND: FULL-SCREEN CINEMATIC LYRICS MODE (Smoothly transitions in/out) */}
       <div
+        inert={!showLyrics}
         className={`fixed inset-0 z-30 transition-all duration-500 ease-out ${
           showLyrics && currentTrack
             ? 'opacity-100 scale-100 pointer-events-auto visible'
@@ -2176,6 +2221,7 @@ export function App() {
       >
         {currentTrack && (
           <CinematicLyricsView
+            isActive={showLyrics}
             track={currentTrack}
             prevTrack={
               queue.length > 1 
@@ -2485,8 +2531,20 @@ export function App() {
         ref={audioRef}
         crossOrigin="anonymous"
         preload="auto"
+        onLoadedMetadata={event => {
+          const audio = event.currentTarget;
+          if (pendingResumeRef.current > 0) {
+            const position = Math.min(pendingResumeRef.current, Number.isFinite(audio.duration) ? Math.max(0, audio.duration - 0.1) : pendingResumeRef.current);
+            audio.currentTime = position;
+            pendingResumeRef.current = 0;
+          }
+        }}
+        onLoadStart={() => { if (audioRef.current?.src) setPlaybackStatus('loading'); }}
+        onWaiting={event => { setPlaybackStatus('buffering'); musicMemory.onPlaybackStateChange(false, event.currentTarget.currentTime); }}
+        onPlaying={event => { setPlaybackStatus('playing'); setPlaybackError(null); musicMemory.onPlaybackStateChange(true, event.currentTarget.currentTime); }}
         onTimeUpdate={(e) => {
           const t = e.currentTarget.currentTime;
+          if (pendingResumeRef.current > 0 && e.currentTarget.readyState < 1) return;
           if (typeof t === 'number' && !isNaN(t)) {
             setCurrentTime(t);
             musicMemory.onTimeUpdate(t, e.currentTarget.duration || duration);
@@ -2506,12 +2564,14 @@ export function App() {
           }
         }}
         onPlay={(e) => {
-          musicMemory.onPlaybackStateChange(true, e.currentTarget.currentTime);
           setIsPlaying(true);
         }}
         onPause={(e) => {
           musicMemory.onPlaybackStateChange(false, e.currentTarget.currentTime);
           setIsPlaying(false);
+          setPlaybackStatus(previous => previous === 'error' || previous === 'loading' ? previous : 'paused');
+          const snapshot = snapshotRef.current;
+          musicMemory.saveSessionSnapshot(snapshot.queue, snapshot.queueIndex, pendingResumeRef.current || e.currentTarget.currentTime);
         }}
         onEnded={() => {
           // Ghost Radio auto-continuation
@@ -2539,46 +2599,30 @@ export function App() {
             handleNextRef.current();
           }
         }}
-        onError={async () => {
-          console.warn('[Audio] Playback error encountered on audio element');
+        onError={() => {
           const targetTrack = currentTrackRef.current;
+          const request = playRequestRef.current;
           if (!targetTrack) return;
-
-          // 1. If local offline file failed, seamlessly fall back to online streaming
-          if (isLocalActiveRef.current) {
-            console.warn(`[Audio Fallback] Local playback failed for "${targetTrack.title}", falling back to online stream...`);
+          musicMemory.onPlaybackStateChange(false, audioRef.current?.currentTime || 0);
+          // Recover only the same recording, and respect the user's offline setting.
+          if (isLocalActiveRef.current && !isOfflineMode && navigator.onLine && audioRef.current) {
             isLocalActiveRef.current = false;
-            if (audioRef.current) {
-              audioRef.current.src = getApiUrl(`/api/stream/${targetTrack.id}`);
-              audioRef.current.currentTime = 0;
-              audioRef.current.play().catch(e => console.warn('[Audio Fallback] Stream play notice:', e.message));
-            }
+            setPlaybackStatus('loading');
+            pendingResumeRef.current = audioRef.current.currentTime;
+            audioRef.current.src = getApiUrl(`/api/stream/${targetTrack.id}`);
+            audioRef.current.play().catch(() => {
+              if (request !== playRequestRef.current) return;
+              setIsPlaying(false);
+              setPlaybackStatus('error');
+              setPlaybackError('This song is unavailable. Try again or choose another song.');
+            });
             return;
           }
-
-          // 2. If online stream failed, search for an alternate catalogue track
-          if (!fallbackAttemptedRef.current.has(targetTrack.id)) {
-            fallbackAttemptedRef.current.add(targetTrack.id);
-            try {
-              const query = `${targetTrack.title} ${targetTrack.artist} audio`;
-              const res = await fetch(getApiUrl(`/api/search?q=${encodeURIComponent(query)}`));
-              if (res.ok) {
-                const data = await res.json();
-                const alt = (data.results || []).find((r: Track) => r.id !== targetTrack.id);
-                if (alt && audioRef.current) {
-                  console.log(`[Auto-Fallback] Playing alternate audio track for "${alt.title}" (${alt.id})`);
-                  currentTrackRef.current = { ...targetTrack, id: alt.id };
-                  setCurrentTrack(prev => prev ? ({ ...prev, id: alt.id }) : prev);
-                  audioRef.current.src = getApiUrl(`/api/stream/${alt.id}`);
-                  audioRef.current.play().catch(() => {});
-                  return;
-                }
-              }
-            } catch (e) {
-              console.error('Alternative search error', e);
-            }
-          }
-          handleNextRef.current();
+          setIsPlaying(false);
+          setPlaybackStatus('error');
+          setPlaybackError(!navigator.onLine || isOfflineMode
+            ? 'You are offline and this song could not be opened. Choose another local song or reconnect.'
+            : 'This song is unavailable. Try again or choose another song.');
         }}
       />
     </div>

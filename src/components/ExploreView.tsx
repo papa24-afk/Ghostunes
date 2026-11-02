@@ -26,9 +26,11 @@ import {
   Loader2,
   FolderSync,
   Dna,
-  ShieldCheck
+  ShieldCheck, LayoutGrid, List
 } from 'lucide-react';
 import { getOptimizedArtwork, getThumbnailArtwork } from '../utils/artwork';
+import { TrackCollection } from './TrackCollection';
+import { Artwork } from './Artwork';
 
 export const GENRE_CHIPS = [
   'Trending',
@@ -82,56 +84,11 @@ interface Props {
   onOpenArtist?: (artistName: string, artistId?: string) => void;
 }
 
-// Artwork component with fallback to YouTube HQ default thumbnail
-const CrispArtwork: React.FC<{
-  track: Track;
-  className?: string;
-  isDataSaver?: boolean;
-}> = ({ track, className = '', isDataSaver = false }) => {
-  const offlineUrl = track.local_artwork_url || (track.id ? `http://127.0.0.1:3001/api/artwork/${track.id}` : '');
-  const primaryUrl = track.local_artwork_url || (isDataSaver 
-    ? getThumbnailArtwork(track.thumbnail, track.id) 
-    : getOptimizedArtwork(track.thumbnail, false, track.id));
-  const fallbackUrl = track.id ? `https://i.ytimg.com/vi/${track.id}/hqdefault.jpg` : '';
-  const [src, setSrc] = useState(primaryUrl || offlineUrl || fallbackUrl);
-  const [hasError, setHasError] = useState(false);
-
-  useEffect(() => {
-    const nextUrl = track.local_artwork_url || (isDataSaver ? getThumbnailArtwork(track.thumbnail, track.id) : getOptimizedArtwork(track.thumbnail, false, track.id));
-    setSrc(nextUrl || offlineUrl || fallbackUrl);
-    setHasError(false);
-  }, [track.thumbnail, track.local_artwork_url, track.id, isDataSaver, fallbackUrl, offlineUrl]);
-
-  const handleError = () => {
-    if (offlineUrl && src !== offlineUrl) {
-      setSrc(offlineUrl);
-    } else if (fallbackUrl && src !== fallbackUrl) {
-      setSrc(fallbackUrl);
-    } else {
-      setHasError(true);
-    }
-  };
-
-  return (
-    <div className={`relative aspect-square w-full rounded-xl overflow-hidden bg-[#141416] select-none ${className}`}>
-      {!hasError ? (
-        <img
-          src={src}
-          alt={track.title}
-          loading="eager"
-          decoding="async"
-          onError={handleError}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-        />
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-[#141416] text-zinc-600 p-2 text-center">
-          <Disc3 className="w-7 h-7 text-zinc-700 mb-1" />
-          <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider">No Artwork</span>
-        </div>
-      )}
-    </div>
-  );
-};
+const CrispArtwork: React.FC<{ track: Track; className?: string; isDataSaver?: boolean }> = ({ track, className = '', isDataSaver = false }) => (
+  <div className={`aspect-square w-full rounded-xl overflow-hidden ${className}`}>
+    <Artwork src={track.thumbnail} localSrc={track.local_artwork_url} trackId={track.id} alt={track.title} isDataSaver={isDataSaver} />
+  </div>
+);
 
 // 4-Artwork Collage Component for Playlist Covers
 const PlaylistCollage: React.FC<{ playlist: Playlist; isDataSaver?: boolean }> = ({ playlist, isDataSaver = false }) => {
@@ -221,7 +178,7 @@ export const ExploreView: React.FC<Props> = ({
   const [openMenuPlaylistId, setOpenMenuPlaylistId] = useState<string | null>(null);
   const [playlistToDelete, setPlaylistToDelete] = useState<Playlist | null>(null);
   const [internalSelectedPlaylistId, setInternalSelectedPlaylistId] = useState<string | null>(passedSelectedPlaylistId || null);
-  const selectedPlaylistId = passedSelectedPlaylistId !== undefined && passedSelectedPlaylistId !== null ? passedSelectedPlaylistId : internalSelectedPlaylistId;
+  const selectedPlaylistId = passedSelectedPlaylistId !== undefined ? passedSelectedPlaylistId : internalSelectedPlaylistId;
   const setSelectedPlaylistId = (id: string | null) => {
     setInternalSelectedPlaylistId(id);
     onSelectPlaylist?.(id);
@@ -229,6 +186,28 @@ export const ExploreView: React.FC<Props> = ({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameText, setRenameText] = useState('');
   const [showUnmatched, setShowUnmatched] = useState(false);
+  const [collectionQuery, setCollectionQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState('saved');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    try { return localStorage.getItem('ghost_collection_view') === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
+  });
+  useEffect(() => { setCollectionQuery(''); setSortOrder('saved'); }, [activeTab, selectedPlaylistId]);
+  useEffect(() => { try { localStorage.setItem('ghost_collection_view', viewMode); } catch {} }, [viewMode]);
+  const filterText = collectionQuery.trim().toLocaleLowerCase();
+  const filteredPlaylists = playlists.filter(playlist => !filterText || `${playlist.name} ${playlist.description || ''}`.toLocaleLowerCase().includes(filterText))
+    .sort((a, b) => sortOrder === 'title' ? a.name.localeCompare(b.name) : b.createdAt - a.createdAt);
+  const collectionControls = (includeFilter = true, includeLayout = true) => (
+    <div className="flex flex-wrap items-center gap-3 py-4">
+      {includeFilter && <input aria-label="Search this collection" placeholder="Search this collection…" value={collectionQuery} onChange={event => setCollectionQuery(event.target.value)} className="min-w-0 flex-1 sm:max-w-xs rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-rose-400/50" />}
+      <select aria-label="Sort collection" value={sortOrder} onChange={event => setSortOrder(event.target.value)} className="rounded-lg border border-white/10 bg-[#141418] px-3 py-2 text-xs text-zinc-300">
+        <option value="saved">Recently saved</option><option value="title">Title A–Z</option>{activeTab !== 'library' && <option value="artist">Artist A–Z</option>}
+      </select>
+      {includeLayout && <div className="flex gap-1 ml-auto" role="group" aria-label="Collection layout">
+        <button onClick={() => setViewMode('grid')} title="Grid view" aria-label="Grid view" aria-pressed={viewMode === 'grid'} className={`p-2 rounded-lg ${viewMode === 'grid' ? 'bg-[#9e2a40]/25 text-rose-300' : 'text-zinc-400 hover:bg-white/5'}`}><LayoutGrid className="w-4 h-4" /></button>
+        <button onClick={() => setViewMode('list')} title="List view" aria-label="List view" aria-pressed={viewMode === 'list'} className={`p-2 rounded-lg ${viewMode === 'list' ? 'bg-[#9e2a40]/25 text-rose-300' : 'text-zinc-400 hover:bg-white/5'}`}><List className="w-4 h-4" /></button>
+      </div>}
+    </div>
+  );
 
   // Close overflow menus on outside click
   useEffect(() => {
@@ -262,45 +241,15 @@ export const ExploreView: React.FC<Props> = ({
   // Deduplication for explore & search grid
   const displayTracks = useMemo(() => {
     const seenIds = new Set<string>();
-    const seenTitles = new Set<string>();
-    const unique: Track[] = [];
-
-    for (const t of rawTracks) {
-      if (!t || !t.id) continue;
-      if (seenIds.has(t.id)) continue;
-
-      const normTitle = (t.title || '')
-        .toLowerCase()
-        .replace(/[\(\[\{].*?[\)\]\}]/g, '')
-        .replace(/[^\w\s]/g, '')
-        .trim();
-      const normArtist = (t.artist || '').toLowerCase().trim();
-      const normKey = `${normTitle}__${normArtist}`;
-
-      if (seenTitles.has(normKey)) continue;
-
-      seenIds.add(t.id);
-      seenTitles.add(normKey);
-      unique.push(t);
-    }
-
-    const filtered: Track[] = [];
-    const artistCounts = new Map<string, number>();
-
-    for (const t of unique) {
-      const art = (t.artist || '').toLowerCase().trim();
-      const isSoundFx = art.includes('sound ideas') || art.includes('sound effects') || (t.title || '').toLowerCase().includes('sound effects');
-      const count = artistCounts.get(art) || 0;
-
-      if (isSoundFx && count >= 1) continue;
-      if (count >= 5 && unique.length > 10) continue;
-
-      artistCounts.set(art, count + 1);
-      filtered.push(t);
-    }
-
-    return filtered.length >= 4 ? filtered : unique;
+    return rawTracks.filter(track => {
+      if (!track?.id || seenIds.has(track.id)) return false;
+      seenIds.add(track.id);
+      return true;
+    });
   }, [rawTracks]);
+  const visibleTracks = displayTracks.filter(track => activeTab !== 'favorites' || !filterText ||
+    `${track.title} ${track.artist} ${track.album || ''}`.toLocaleLowerCase().includes(filterText))
+    .sort((a, b) => sortOrder === 'title' ? a.title.localeCompare(b.title) : sortOrder === 'artist' ? a.artist.localeCompare(b.artist) : 0);
 
   // Featured Top Result (Left Column)
   const topResult: Track | null = useMemo(() => {
@@ -310,14 +259,6 @@ export const ExploreView: React.FC<Props> = ({
 
   const isTopResultPlaying = currentTrack?.id === topResult?.id && isPlaying;
   const isTopResultLiked = topResult ? favorites.some(f => String(f?.id ?? '').trim() === String(topResult.id).trim()) : false;
-
-  const formatTrackMeta = (track: Track) => {
-    const format = track.album ? 'Album' : 'Single';
-    const genre = selectedGenre && selectedGenre !== 'Trending' ? selectedGenre : 'Afrobeats';
-    const dur = track.duration || '';
-    if (dur) return `${format} • ${dur}`;
-    return `${format} • 2024 • ${genre}`;
-  };
 
   // Permanent Playlist Deletion Confirmation Dialog Modal
   const renderDeleteModal = () => {
@@ -394,6 +335,7 @@ export const ExploreView: React.FC<Props> = ({
   // =========================================================================
   if (activeTab === 'library' && selectedPlaylist) {
     const isPlaylistPlaying = selectedPlaylist.tracks.some(t => t.id === currentTrack?.id) && isPlaying;
+    const playlistTracks = selectedPlaylist.tracks.filter(track => !filterText || `${track.title} ${track.artist}`.toLocaleLowerCase().includes(filterText)).sort((a, b) => sortOrder === 'title' ? a.title.localeCompare(b.title) : 0);
     const hasUnmatched = selectedPlaylist.unmatchedTracks && selectedPlaylist.unmatchedTracks.length > 0;
 
     const handlePlayAll = () => {
@@ -494,7 +436,7 @@ export const ExploreView: React.FC<Props> = ({
             {/* Action Buttons */}
             <div className="flex items-center gap-3 mt-4">
               <button
-                onClick={handlePlayAll}
+                onClick={() => isPlaylistPlaying ? onTogglePlayPause() : handlePlayAll()}
                 disabled={selectedPlaylist.tracks.length === 0}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold shadow-lg transition-all active:scale-95 cursor-pointer ${
                   selectedPlaylist.tracks.length > 0
@@ -613,15 +555,16 @@ export const ExploreView: React.FC<Props> = ({
           </div>
         )}
 
+        {collectionControls(true, false)}
         {/* Tracklist Table */}
         <div className="mt-6 space-y-1">
-          {selectedPlaylist.tracks.length === 0 ? (
+          {playlistTracks.length === 0 ? (
             <div className="py-16 text-center text-zinc-500">
               <Music2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No songs in this playlist yet.</p>
+              <p className="text-sm">{filterText ? 'No songs match this search.' : 'No songs in this playlist yet.'}</p>
             </div>
           ) : (
-            selectedPlaylist.tracks.map((t, idx) => {
+            playlistTracks.map((t, idx) => {
               const isCurrent = currentTrack?.id === t.id;
               const isTrackPlaying = isCurrent && isPlaying;
               const isLiked = favorites.some(f => String(f?.id ?? '').trim() === String(t.id).trim());
@@ -629,7 +572,7 @@ export const ExploreView: React.FC<Props> = ({
               return (
                 <div
                   key={`${t.id}-${idx}`}
-                  onClick={() => onPlayTrack(t, selectedPlaylist.tracks)}
+                  onClick={() => isCurrent ? onTogglePlayPause() : onPlayTrack(t, selectedPlaylist.tracks)}
                   className={`group flex items-center justify-between p-2.5 sm:p-3 rounded-2xl cursor-pointer transition-colors ${
                     isCurrent ? 'bg-white/10 text-white' : 'hover:bg-white/5 text-zinc-300 hover:text-white'
                   }`}
@@ -776,7 +719,7 @@ export const ExploreView: React.FC<Props> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             {onOpenImportModal && (
               <button
                 onClick={onOpenImportModal}
@@ -818,10 +761,12 @@ export const ExploreView: React.FC<Props> = ({
           </div>
         </div>
 
+        {collectionControls()}
+
         {/* Playlists Shelf */}
-        <div className="mt-7">
+        <div className="mt-2">
           <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-4">
-            Playlists ({playlists.length})
+            Playlists ({filteredPlaylists.length})
           </h2>
 
           {playlists.length === 0 ? (
@@ -848,16 +793,17 @@ export const ExploreView: React.FC<Props> = ({
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
-              {playlists.map(pl => {
+            <div className={viewMode === 'list' ? 'flex flex-col gap-2' : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6 gap-4'}>
+              {filteredPlaylists.map(pl => {
                 return (
                   <div
                     key={pl.id}
                     onClick={() => setSelectedPlaylistId(pl.id)}
-                    className="group relative flex flex-col p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/15 transition-all cursor-pointer shadow-md"
+                    role="button" tabIndex={0} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedPlaylistId(pl.id); } }}
+                    className={`group relative flex ${viewMode === 'list' ? 'flex-row items-center gap-4' : 'flex-col'} p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/15 transition-all cursor-pointer`}
                   >
                     {/* Artwork Container */}
-                    <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#18181c] border border-white/5 mb-3 shadow">
+                    <div className={`relative ${viewMode === 'list' ? 'w-14 h-14 shrink-0' : 'aspect-square w-full mb-3'} rounded-xl overflow-hidden bg-[#18181c] border border-white/5 shadow`}>
                       <PlaylistCollage playlist={pl} isDataSaver={isDataSaver} />
 
                       {/* Hover Play Button */}
@@ -960,50 +906,11 @@ export const ExploreView: React.FC<Props> = ({
           )}
         </div>
 
-        {/* Favourites Quick Shelf */}
-        {favorites.length > 0 && (
-          <div className="mt-10">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-4">
-              Favourites ({favorites.length})
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
-              {favorites.slice(0, 6).map(track => (
-                <div
-                  key={track.id}
-                  onClick={() => onPlayTrack(track, favorites)}
-                  className="group flex flex-col p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.03] transition-all cursor-pointer"
-                >
-                  <div className="aspect-square w-full rounded-lg overflow-hidden mb-2 bg-zinc-800">
-                    <img 
-                      src={track.local_artwork_url || getOptimizedArtwork(track.thumbnail, isDataSaver, track.id)} 
-                      alt="" 
-                      className="w-full h-full object-cover" 
-                      onError={(e) => {
-                        const img = e.currentTarget;
-                        if (track.id && !img.src.includes('/api/artwork/')) {
-                          img.src = `http://127.0.0.1:3001/api/artwork/${track.id}`;
-                        }
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs font-semibold text-white truncate">{track.title}</p>
-                  <p 
-                    onClick={(e) => {
-                      if (onOpenArtist && track.artist) {
-                        e.stopPropagation();
-                        onOpenArtist(track.artist);
-                      }
-                    }}
-                    className="text-[10px] text-zinc-400 hover:text-white hover:underline truncate cursor-pointer"
-                    title={`View ${track.artist} profile`}
-                  >
-                    {track.artist}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {playlists.length > 0 && filteredPlaylists.length === 0 && <p className="text-sm text-zinc-400 py-4">No playlists match this search.</p>}
+        {favorites.length > 0 && <section className="mt-6">
+          <h2 className="text-sm font-semibold text-zinc-400 mb-4">Saved songs</h2>
+          <TrackCollection tracks={favorites.filter(track => !filterText || `${track.title} ${track.artist} ${track.album || ''}`.toLocaleLowerCase().includes(filterText)).sort((a, b) => sortOrder === 'title' ? a.title.localeCompare(b.title) : 0).slice(0, filterText ? undefined : 6)} view={viewMode} currentTrack={currentTrack} isPlaying={isPlaying} favorites={favorites} isDataSaver={isDataSaver} onPlayTrack={onPlayTrack} onTogglePlayPause={onTogglePlayPause} onToggleFavorite={onToggleFavorite} onOpenArtist={onOpenArtist} onAddToQueue={onAddToQueue} onOpenAddToPlaylist={onOpenAddToPlaylist} />
+        </section>}
 
         {/* Permanent Playlist Deletion Confirmation Dialog Modal */}
         {renderDeleteModal()}
@@ -1012,448 +919,32 @@ export const ExploreView: React.FC<Props> = ({
     );
   }
 
-  // =========================================================================
-  // VIEW: EXPLORE / SEARCH / FAVORITES (Standard 2-Column Editorial View)
-  // =========================================================================
+  const searching = activeTab === 'explore' && Boolean(searchQuery.trim());
+  const busy = activeTab === 'explore' && loading;
+  const artists = searching ? [...new Set(displayTracks.map(track => track.artist))]
+    .filter(artist => artist.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())).slice(0, 6) : [];
   return (
-    <div className="flex-1 w-full min-h-0 flex flex-col overflow-y-auto px-6 sm:px-10 xl:px-16 pt-3 pb-24 scrollbar-thin select-none">
-      
-      {/* Genre Filters (Explore Tab) */}
-      {activeTab === 'explore' && (
-        <div className="flex items-center gap-2.5 overflow-x-auto pb-5 scrollbar-none flex-nowrap flex-shrink-0">
-          {GENRE_CHIPS.map(g => {
-            const isSelected = selectedGenre === g;
-            return (
-              <button
-                key={g}
-                onClick={() => onSelectGenre(g)}
-                className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border outline-none cursor-pointer focus-visible:ring-1 focus-visible:ring-white/30 ${
-                  isSelected
-                    ? 'bg-[#5c1324] text-white border-[#8a2238] shadow-sm font-semibold'
-                    : 'bg-[#141416] text-[#a1a1aa] hover:text-white border-white/[0.08] hover:bg-[#1a1a1e]'
-                }`}
-              >
-                {g}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Error state */}
-      {error && (
-        <div className="mb-6 p-4 rounded-xl bg-red-950/40 border border-red-500/20 text-red-200 text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button
-            onClick={onRetry}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/60 border border-red-500/30 text-white font-medium transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Retry</span>
-          </button>
-        </div>
-      )}
-
-      {/* Loading state when initial list is empty */}
-      {loading && displayTracks.length === 0 && (
-        <div className="flex-1 flex flex-col lg:flex-row gap-8 items-start animate-pulse">
-          <div className="w-full lg:w-[35%] xl:w-[32%] bg-[#121215] border border-white/[0.06] rounded-2xl p-5 flex flex-col gap-4">
-            <div className="aspect-square w-full rounded-xl bg-zinc-800/50" />
-            <div className="h-7 bg-zinc-800/50 rounded w-3/4" />
-            <div className="h-4 bg-zinc-800/40 rounded w-1/2" />
-          </div>
-          <div className="flex-1 w-full grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="flex flex-col gap-2">
-                <div className="aspect-square w-full rounded-xl bg-zinc-800/40" />
-                <div className="h-4 bg-zinc-800/50 rounded w-3/4" />
-                <div className="h-3 bg-zinc-800/30 rounded w-1/2" />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && !error && displayTracks.length === 0 && (
-        <div className="py-20 flex flex-col items-center justify-center text-center">
-          <Search className="w-10 h-10 text-zinc-600 mb-3" />
-          <h3 className="font-serif text-2xl text-white font-normal">No results found</h3>
-          <p className="text-sm text-zinc-400 mt-1 max-w-sm">
-            {searchQuery
-              ? `We couldn't find any results for "${searchQuery}". Try searching by song name, artist, or exploring a genre.`
-              : 'No tracks available in this section.'}
-          </p>
-          <button
-            onClick={() => onSelectGenre('Trending')}
-            className="mt-5 px-5 py-2 rounded-full bg-[#6b1828] hover:bg-[#852033] text-white text-xs font-medium shadow-md transition-colors cursor-pointer"
-          >
-            Explore Trending
-          </button>
-        </div>
-      )}
-
-      {/* Two-Column Editorial Layout */}
-      {displayTracks.length > 0 && (
-        <div className="flex-1 w-full min-h-0 flex flex-col lg:flex-row gap-8 xl:gap-12 items-start">
-          
-          {/* LEFT COLUMN: Featured Top Result */}
-          {topResult && (
-            <div className="w-full lg:w-[35%] xl:w-[32%] flex-shrink-0 bg-[#121215] border border-white/[0.08] rounded-2xl p-5 shadow-2xl flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[11px] font-mono tracking-wider uppercase text-zinc-400 font-semibold">
-                    TOP RESULT
-                  </span>
-                  <span className="text-[11px] font-mono text-zinc-500">
-                    Match 1 of {displayTracks.length}
-                  </span>
-                </div>
-
-                <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-black border border-white/[0.05] group">
-                  <CrispArtwork track={topResult} isDataSaver={isDataSaver} />
-                  <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px]">
-                    <button
-                      onClick={() => {
-                        if (topResult) {
-                          if (currentTrack?.id === topResult.id) {
-                            onTogglePlayPause();
-                          } else {
-                            onPlayTrack(topResult, displayTracks);
-                          }
-                        }
-                      }}
-                      className="w-14 h-14 rounded-full bg-[#6b1828]/90 hover:bg-[#852033] text-white flex items-center justify-center shadow-2xl transform transition-transform group-hover:scale-105 active:scale-95 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-                      title={isTopResultPlaying ? "Pause" : "Play"}
-                      aria-label={isTopResultPlaying ? "Pause" : "Play"}
-                    >
-                      {isTopResultPlaying ? (
-                        <Pause className="w-6 h-6 fill-white text-white" />
-                      ) : (
-                        <Play className="w-6 h-6 fill-white text-white ml-0.5" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-5">
-                  <h2 
-                    title={topResult.title}
-                    className="font-serif text-2xl sm:text-3xl font-medium text-white tracking-tight leading-tight truncate"
-                  >
-                    {topResult.title}
-                  </h2>
-                  <p 
-                    title={topResult.artist}
-                    onClick={(e) => {
-                      if (onOpenArtist && topResult.artist) {
-                        e.stopPropagation();
-                        onOpenArtist(topResult.artist);
-                      }
-                    }}
-                    className="text-zinc-400 hover:text-white hover:underline text-sm sm:text-base font-normal mt-1 truncate cursor-pointer"
-                  >
-                    {topResult.artist}
-                  </p>
-                  <p className="text-xs text-zinc-500 mt-1">
-                    {formatTrackMeta(topResult)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Actions row */}
-              <div className="mt-6 pt-5 border-t border-white/[0.06] flex items-center gap-3">
-                <button
-                  onClick={() => topResult && onPlayTrack(topResult, displayTracks)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#6b1828] hover:bg-[#852033] text-white text-xs font-semibold shadow-lg hover:shadow-xl transition-all active:scale-95 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                  title={`Play ${topResult.title}`}
-                >
-                  <Play className="w-3.5 h-3.5 fill-white text-white" />
-                  <span>Play</span>
-                </button>
-
-                <button
-                  onClick={() => topResult && onToggleFavorite(topResult)}
-                  className={`p-2.5 rounded-full border transition-all active:scale-95 cursor-pointer outline-none ${
-                    isTopResultLiked
-                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
-                      : 'bg-[#18181c] border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
-                  }`}
-                  title={isTopResultLiked ? "Remove from Favourites" : "Favourite"}
-                >
-                  <Heart className={`w-4 h-4 ${isTopResultLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
-                </button>
-
-                {topResult && onDownloadTrack && (
-                  <button
-                    onClick={() => onDownloadTrack(topResult)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-full border transition-all active:scale-95 cursor-pointer outline-none text-xs font-semibold ${
-                      downloadedTrackIds?.has(topResult.id)
-                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                        : pausedDownloadingTrackIds?.has(topResult.id)
-                        ? 'bg-[#9e2a40]/20 border-[#9e2a40]/40 text-[#e0536c] hover:bg-[#9e2a40]/30'
-                        : downloadingTrackIds?.has(topResult.id)
-                        ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/30'
-                        : 'bg-[#18181c] border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
-                    }`}
-                    title={
-                      downloadedTrackIds?.has(topResult.id)
-                        ? 'Downloaded for offline playback'
-                        : pausedDownloadingTrackIds?.has(topResult.id)
-                        ? 'Download paused. Click to play / resume.'
-                        : downloadingTrackIds?.has(topResult.id)
-                        ? 'Downloading track. Click to pause.'
-                        : 'Download track for offline playback'
-                    }
-                  >
-                    {downloadedTrackIds?.has(topResult.id) ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : pausedDownloadingTrackIds?.has(topResult.id) ? (
-                      <Play className="w-3.5 h-3.5 text-[#e0536c] fill-current" />
-                    ) : downloadingTrackIds?.has(topResult.id) ? (
-                      <Pause className="w-3.5 h-3.5 text-cyan-400" />
-                    ) : (
-                      <Download className="w-3.5 h-3.5" />
-                    )}
-                    <span>
-                      {downloadedTrackIds?.has(topResult.id)
-                        ? 'Downloaded'
-                        : pausedDownloadingTrackIds?.has(topResult.id)
-                        ? 'Resume'
-                        : downloadingTrackIds?.has(topResult.id)
-                        ? 'Pause'
-                        : 'Download'}
-                    </span>
-                  </button>
-                )}
-
-                {onOpenAddToPlaylist && (
-                  <button
-                    onClick={() => topResult && onOpenAddToPlaylist(topResult)}
-                    className="p-2.5 rounded-full bg-[#18181c] border border-white/10 text-zinc-400 hover:text-white hover:bg-white/10 transition-all active:scale-95 cursor-pointer outline-none"
-                    title="Add to Playlist"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* RIGHT COLUMN: Results Grid */}
-          <div className="flex-1 w-full min-w-0">
-            <div className="flex items-center justify-between mb-3.5">
-              <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold">
-                {activeTab === 'favorites' ? 'All Favourites' : 'Tracks'} ({displayTracks.length})
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-6">
-              {displayTracks.map((track) => {
-                const isCurrent = currentTrack?.id === track.id;
-                const isTrackPlaying = isCurrent && isPlaying;
-                const isLiked = favorites.some(f => String(f?.id ?? '').trim() === String(track.id).trim());
-
-                return (
-                  <div
-                    key={track.id}
-                    className="group relative flex flex-col cursor-pointer outline-none"
-                    onClick={() => onPlayTrack(track, displayTracks)}
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        onPlayTrack(track, displayTracks);
-                      }
-                    }}
-                  >
-                    <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#141416] border border-white/[0.04] group-hover:border-white/15 transition-all duration-200 shadow-md">
-                      <CrispArtwork track={track} isDataSaver={isDataSaver} />
-
-                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
-                        <div className="w-10 h-10 rounded-full bg-[#6b1828] text-white shadow-xl flex items-center justify-center transform scale-90 group-hover:scale-100 transition-transform">
-                          {isTrackPlaying ? (
-                            <Pause className="w-4 h-4 fill-white text-white" />
-                          ) : (
-                            <Play className="w-4 h-4 fill-white text-white ml-0.5" />
-                          )}
-                        </div>
-                      </div>
-
-                      {isCurrent && (
-                        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-md border border-white/20 text-[9px] font-mono text-white flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                          <span>{isTrackPlaying ? 'PLAYING' : 'PAUSED'}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="w-full mt-2.5 flex items-start justify-between gap-1">
-                      <div className="min-w-0 flex-1">
-                        <p 
-                          title={track.title}
-                          className={`text-xs sm:text-sm font-semibold truncate transition-colors ${
-                            isCurrent ? 'text-rose-300' : 'text-zinc-200 group-hover:text-white'
-                          }`}
-                        >
-                          {track.title}
-                        </p>
-                        <p 
-                          title={track.artist}
-                          onClick={(e) => {
-                            if (onOpenArtist && track.artist) {
-                              e.stopPropagation();
-                              onOpenArtist(track.artist);
-                            }
-                          }}
-                          className="text-[11px] sm:text-xs text-zinc-400 hover:text-white hover:underline truncate mt-0.5 cursor-pointer"
-                        >
-                          {track.artist}
-                        </p>
-                        <p className="text-[10px] sm:text-[11px] text-zinc-500 truncate mt-0.5">
-                          {track.album ? `${track.album}` : `Single • ${track.duration || '2024'}`}
-                        </p>
-                      </div>
-
-                      <div 
-                        className="relative flex items-center gap-0.5 flex-shrink-0"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        {onDownloadTrack && (
-                          <button
-                            onClick={() => onDownloadTrack(track)}
-                            className={`p-1.5 sm:p-1 rounded-lg transition-colors cursor-pointer outline-none touch-manipulation ${
-                              downloadedTrackIds?.has(track.id)
-                                ? 'text-emerald-400 opacity-100'
-                                : pausedDownloadingTrackIds?.has(track.id)
-                                ? 'text-[#e0536c] opacity-100'
-                                : downloadingTrackIds?.has(track.id)
-                                ? 'text-cyan-400 opacity-100 hover:text-[#e0536c]'
-                                : 'text-zinc-400 hover:text-white hover:bg-white/10 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100'
-                            }`}
-                            title={
-                              downloadedTrackIds?.has(track.id)
-                                ? 'Downloaded for offline playback'
-                                : pausedDownloadingTrackIds?.has(track.id)
-                                ? 'Download paused. Click to play / resume.'
-                                : downloadingTrackIds?.has(track.id)
-                                ? 'Downloading track. Click to pause.'
-                                : 'Download track for offline playback'
-                            }
-                            aria-label="Download track"
-                          >
-                            {downloadedTrackIds?.has(track.id) ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            ) : pausedDownloadingTrackIds?.has(track.id) ? (
-                              <Play className="w-4 h-4 text-[#e0536c] fill-current" />
-                            ) : downloadingTrackIds?.has(track.id) ? (
-                              <Pause className="w-4 h-4 text-cyan-400" />
-                            ) : (
-                              <Download className="w-4 h-4" />
-                            )}
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => setOpenMenuTrackId(openMenuTrackId === track.id ? null : track.id)}
-                          className="p-1.5 sm:p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 outline-none touch-manipulation cursor-pointer"
-                          title="More options"
-                          aria-label="More options"
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-
-                        {openMenuTrackId === track.id && (
-                          <div 
-                            className="absolute right-0 bottom-full mb-1.5 w-44 bg-[#18181c] border border-white/15 rounded-xl shadow-2xl py-1.5 z-40 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            {onDownloadTrack && (
-                              <button
-                                onClick={() => {
-                                  onDownloadTrack(track);
-                                  setOpenMenuTrackId(null);
-                                }}
-                                className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 text-zinc-200 hover:bg-white/10 transition-colors cursor-pointer"
-                              >
-                                {downloadedTrackIds?.has(track.id) ? (
-                                  <>
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span className="text-emerald-400 font-medium">Downloaded</span>
-                                  </>
-                                ) : pausedDownloadingTrackIds?.has(track.id) ? (
-                                  <>
-                                    <Play className="w-3.5 h-3.5 text-[#e0536c] fill-current" />
-                                    <span className="text-[#e0536c]">Resume Download</span>
-                                  </>
-                                ) : downloadingTrackIds?.has(track.id) ? (
-                                  <>
-                                    <Pause className="w-3.5 h-3.5 text-cyan-400" />
-                                    <span className="text-cyan-300">Pause Download</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Download className="w-3.5 h-3.5 text-zinc-400" />
-                                    <span>Download Song</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
-
-                            <button
-                              onClick={() => {
-                                onToggleFavorite(track);
-                                setOpenMenuTrackId(null);
-                              }}
-                              className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 text-zinc-200 hover:bg-white/10 transition-colors"
-                            >
-                              <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-rose-500 text-rose-500' : 'text-zinc-400'}`} />
-                              <span>{isLiked ? 'Remove from Favourites' : 'Add to Favourites'}</span>
-                            </button>
-                            {onOpenAddToPlaylist && (
-                              <button
-                                onClick={() => {
-                                  onOpenAddToPlaylist(track);
-                                  setOpenMenuTrackId(null);
-                                }}
-                                className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 text-zinc-200 hover:bg-white/10 transition-colors"
-                              >
-                                <Plus className="w-3.5 h-3.5 text-zinc-400" />
-                                <span>Add to Playlist...</span>
-                              </button>
-                            )}
-                            {onAddToQueue && (
-                              <button
-                                onClick={() => {
-                                  onAddToQueue(track);
-                                  setOpenMenuTrackId(null);
-                                }}
-                                className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 text-zinc-200 hover:bg-white/10 transition-colors"
-                              >
-                                <ListPlus className="w-3.5 h-3.5 text-zinc-400" />
-                                <span>Add to Queue</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-                );
-              })}
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* Permanent Playlist Deletion Confirmation Dialog Modal */}
-      {renderDeleteModal()}
-
-    </div>
+    <main className="flex-1 w-full min-h-0 overflow-y-auto p-6 lg:p-8 pb-28 scrollbar-thin">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
+        <div><h1 className="font-serif text-3xl">{activeTab === 'favorites' ? 'Favourites' : searching ? `Results for “${searchQuery.trim()}”` : 'Explore'}</h1>
+          <p className="text-sm text-zinc-400 mt-2">{activeTab === 'favorites' ? `${favorites.length} songs you love, all in one place.` : searching ? 'Songs and artists matching your search.' : 'Find something for your next listening session.'}</p></div>
+        {activeTab === 'favorites' && favorites.length > 0 && <button onClick={() => onPlayTrack(visibleTracks[0], visibleTracks)} disabled={!visibleTracks.length} className="px-4 py-2 rounded-full bg-[#9e2a40] disabled:opacity-40 text-sm flex items-center gap-2"><Play className="w-4 h-4 fill-current" />Play favourites</button>}
+      </div>
+      {activeTab === 'explore' && !searching && <div className="flex gap-2 overflow-x-auto pb-5" aria-label="Browse by genre">{GENRE_CHIPS.map(genre => <button key={genre} onClick={() => onSelectGenre(genre)} aria-pressed={selectedGenre === genre} className={`whitespace-nowrap px-4 py-2 text-xs rounded-full border ${selectedGenre === genre ? 'bg-[#5c1324] border-[#8a2238] text-white' : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-white'}`}>{genre}</button>)}</div>}
+      {activeTab === 'favorites' && collectionControls()}
+      {activeTab === 'explore' && error && <div role="alert" className="flex items-center justify-between gap-4 p-4 mb-5 rounded-xl bg-rose-950/40 border border-rose-500/20 text-sm"><span>{error}</span><button onClick={onRetry} className="flex items-center gap-2 shrink-0"><RotateCcw className="w-4 h-4" />Retry</button></div>}
+      {busy && <div role="status" className="flex items-center gap-2 text-sm text-zinc-400 py-4"><Loader2 className="w-4 h-4 animate-spin" />{searching ? 'Searching music…' : 'Loading music…'}</div>}
+      {!busy && searching && topResult && <section className="flex items-center gap-4 rounded-2xl border border-white/10 bg-[#141418] p-4 mb-6 max-w-2xl">
+        <button onClick={() => isTopResultPlaying ? onTogglePlayPause() : onPlayTrack(topResult, displayTracks)} aria-label={`Play top result: ${topResult.title}`} className="w-20 h-20 shrink-0"><CrispArtwork track={topResult} isDataSaver={isDataSaver} /></button>
+        <div className="min-w-0 flex-1"><p className="text-[10px] uppercase tracking-wider text-rose-300 mb-1">Top result</p><h2 className="text-lg font-semibold line-clamp-2">{topResult.title}</h2><p className="text-sm text-zinc-400 truncate">{topResult.artist} · {topResult.duration || 'Song'}</p></div>
+        <button onClick={() => currentTrack?.id === topResult.id ? onTogglePlayPause() : onPlayTrack(topResult, displayTracks)} aria-label={isTopResultPlaying ? 'Pause top result' : 'Play top result'} className="p-3 rounded-full bg-[#9e2a40]">{isTopResultPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-current" />}</button>
+      </section>}
+      {!busy && artists.length > 0 && onOpenArtist && <section className="mb-6"><h2 className="text-sm font-semibold mb-3">Artists</h2><div className="flex flex-wrap gap-2">{artists.map(artist => <button key={artist} onClick={() => onOpenArtist(artist)} className="px-4 py-2 text-sm rounded-full bg-white/5 border border-white/10 hover:bg-white/10">{artist}</button>)}</div></section>}
+      {!busy && visibleTracks.length > 0 && <>
+        <h2 className="text-sm text-zinc-400 mb-3">{activeTab === 'favorites' ? 'Saved songs' : 'Songs'} ({visibleTracks.length})</h2>
+        <TrackCollection tracks={visibleTracks} view={searching ? 'list' : viewMode} currentTrack={currentTrack} isPlaying={isPlaying} favorites={favorites} isDataSaver={isDataSaver} onPlayTrack={onPlayTrack} onTogglePlayPause={onTogglePlayPause} onToggleFavorite={onToggleFavorite} onOpenArtist={onOpenArtist} onAddToQueue={onAddToQueue} onOpenAddToPlaylist={onOpenAddToPlaylist} onDownloadTrack={onDownloadTrack} downloadedTrackIds={downloadedTrackIds} downloadingTrackIds={downloadingTrackIds} pausedDownloadingTrackIds={pausedDownloadingTrackIds} />
+      </>}
+      {!busy && visibleTracks.length === 0 && <div className="py-14 text-center rounded-xl border border-dashed border-white/10"><Music className="w-8 h-8 mx-auto text-zinc-600 mb-3" /><h2 className="text-lg">{activeTab === 'favorites' && !filterText ? 'Your favourites start here' : 'No songs found'}</h2><p className="text-sm text-zinc-400 mt-2">{activeTab === 'favorites' ? filterText ? 'Try another title or artist.' : 'Tap the heart on a song to save it here.' : 'Try another search or explore a different genre.'}</p></div>}
+    </main>
   );
 };

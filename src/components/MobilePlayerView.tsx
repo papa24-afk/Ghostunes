@@ -63,8 +63,8 @@ export interface MobilePlayerViewProps {
   onOpenAbout?: () => void;
   onOpenAppearanceModal?: () => void;
   onOpenAudioLab?: () => void;
-  currentView: 'home' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist';
-  onViewChange: (view: 'home' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist') => void;
+  currentView: 'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist';
+  onViewChange: (view: 'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist') => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   selectedGenre: string;

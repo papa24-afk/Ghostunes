@@ -465,7 +465,7 @@ export const recordListeningPlay = async (entry: Partial<ListeningHistoryRecord>
     const raw = localStorage.getItem('ghost_listening_history');
     const history: ListeningHistoryRecord[] = raw ? JSON.parse(raw) : [];
     const newEntry: ListeningHistoryRecord = {
-      id: `play_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      id: entry.id || `play_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       track_id: entry.track_id || '',
       title: entry.title || 'Untitled',
       artist: entry.artist || 'Unknown Artist',
@@ -477,7 +477,13 @@ export const recordListeningPlay = async (entry: Partial<ListeningHistoryRecord>
       session_id: entry.session_id,
       source: entry.source || 'manual'
     };
-    history.unshift(newEntry);
+    const existingIndex = history.findIndex(item => item.id === newEntry.id);
+    if (existingIndex >= 0) {
+      const previous = history[existingIndex];
+      history[existingIndex] = { ...previous, duration: newEntry.duration,
+        duration_played: Math.max(previous.duration_played, newEntry.duration_played),
+        completion_ratio: Math.max(previous.completion_ratio, newEntry.completion_ratio) };
+    } else history.unshift(newEntry);
     if (history.length > 500) history.pop();
     localStorage.setItem('ghost_listening_history', JSON.stringify(history));
     return newEntry.id;
@@ -552,6 +558,9 @@ export const getListeningStats = async (): Promise<ListeningStats> => {
       totalPlays: history.length,
       totalListeningMinutes: Math.round(totalSeconds / 60),
       uniqueTracks: Object.keys(trackMap).length,
+      uniqueArtists: Object.keys(artistMap).length,
+      uniqueAlbums: new Set(history.filter(item => item.album?.trim()).map(item => `${item.artist.trim().toLowerCase()}::${(item.album || '').trim().toLowerCase()}`)).size,
+      todayListeningMinutes: Math.round(history.filter(item => item.played_at >= new Date().setHours(0, 0, 0, 0)).reduce((sum, item) => sum + item.duration_played, 0) / 60),
       topArtists,
       topTracks
     };

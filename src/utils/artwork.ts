@@ -7,6 +7,28 @@
 // Offline artwork URL registry mapping trackId -> local artwork URL
 const offlineArtworkRegistry = new Map<string, string>();
 
+/** Try the supplied image before guessed sizes; not every release has a video thumbnail. */
+export function getArtworkCandidates(url?: string | null, trackId?: string | null, localUrl?: string | null, isDataSaver = false): string[] {
+  const candidates: string[] = [];
+  const add = (value?: string | null) => { if (value && !candidates.includes(value)) candidates.push(value); };
+  add(localUrl);
+  if (trackId && typeof navigator !== 'undefined' && !navigator.onLine) add(offlineArtworkRegistry.get(trackId));
+  if (isDataSaver) add(getThumbnailArtwork(url, trackId));
+  add(url);
+  if (url && /(?:googleusercontent\.com|ggpht\.com)/.test(url)) {
+    for (const size of [544, 260, 120]) {
+      if (/=w\d+-h\d+/.test(url)) add(url.replace(/=w\d+-h\d+[^?]*/, `=w${size}-h${size}-l90-rj`));
+      else if (/=s\d+/.test(url)) add(url.replace(/=s\d+[^?]*/, `=s${size}`));
+    }
+  }
+  const videoId = url?.match(/ytimg\.com\/vi(?:_webp)?\/([\w-]{11})\//)?.[1] || (/^[\w-]{11}$/.test(trackId || '') ? trackId : null);
+  if (videoId) {
+    for (const size of ['hqdefault', 'mqdefault', 'default']) add(`https://i.ytimg.com/vi/${videoId}/${size}.jpg`);
+  }
+  if (trackId) add(offlineArtworkRegistry.get(trackId));
+  return candidates;
+}
+
 /**
  * Registers offline artwork URLs for downloaded tracks.
  */

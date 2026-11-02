@@ -144,6 +144,9 @@ export interface ListeningHistoryRecord {
 export interface ListeningStats {
   totalPlays: number;
   totalListeningMinutes: number;
+  uniqueArtists?: number;
+  uniqueAlbums?: number;
+  todayListeningMinutes?: number;
   uniqueTracks: number;
   topArtists: { artist: string; plays: number; total_seconds: number; thumbnail?: string }[];
   topTracks: { track_id: string; title: string; artist: string; plays: number; last_played: number; thumbnail?: string }[];

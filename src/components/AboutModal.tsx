@@ -1,5 +1,7 @@
 // src/components/AboutModal.tsx
 import React, { useEffect, useState } from 'react';
+import { isCapacitorNative } from '../utils/api';
+import { MobileServerSettings } from './MobileServerSettings';
 import { 
   X, 
   ArrowLeft, 
@@ -144,6 +146,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
 
         {/* Drawer Body */}
         <div className="flex-1 p-6 space-y-6">
+          {isCapacitorNative() && <MobileServerSettings />}
           {/* App Brand & Version Card */}
           <div className="flex flex-col items-center text-center pt-2 pb-1">
             <div className="relative mb-3.5 flex items-center justify-center">

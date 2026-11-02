@@ -13,6 +13,8 @@ import { ArtistAvatar } from './ArtistAvatar';
 
 interface MusicMemoryViewProps {
   onBack: () => void;
+  favorites?: Track[];
+  onToggleFavorite?: (track: Track) => void;
   onPlayTrack: (track: Track) => void;
   onResumeSession?: (tracks: Track[], index: number, time: number) => void;
   onOpenArtist?: (artistName: string) => void;
@@ -20,6 +22,8 @@ interface MusicMemoryViewProps {
 
 export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
   onBack,
+  favorites = [],
+  onToggleFavorite,
   onPlayTrack,
   onResumeSession,
   onOpenArtist
@@ -39,7 +43,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week'>('all');
   const [isDateFilterOpen, setIsDateFilterOpen] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
+  const favoritedIds = new Set(favorites.map(track => track.id));
 
   const loadData = async () => {
     setLoading(true);
@@ -86,18 +90,6 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
     setTimeout(() => setExportNotice(null), 3000);
   };
 
-  const toggleFavorite = (trackId: string) => {
-    setFavoritedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(trackId)) {
-        next.delete(trackId);
-      } else {
-        next.add(trackId);
-      }
-      return next;
-    });
-  };
-
   // Image lookup map from history
   const trackArtworkMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -134,16 +126,16 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
     history.forEach(h => {
       if (h.album && h.album.trim()) albumSet.add(h.album.trim().toLowerCase());
     });
-    return albumSet.size || (history.length > 0 ? Math.max(1, Math.round(history.length / 4)) : 0);
-  }, [history]);
+    return stats?.uniqueAlbums ?? albumSet.size;
+  }, [history, stats]);
 
   // Today's listening minutes
   const todayMinutes = useMemo(() => {
     const startOfToday = new Date().setHours(0, 0, 0, 0);
     const todayPlays = history.filter(h => h.played_at >= startOfToday);
     const totalSecs = todayPlays.reduce((acc, h) => acc + (h.duration_played || 0), 0);
-    return Math.round(totalSecs / 60);
-  }, [history]);
+    return stats?.todayListeningMinutes ?? Math.round(totalSecs / 60);
+  }, [history, stats]);
 
   // Group history chronologically
   const groupedHistory = useMemo(() => {
@@ -207,6 +199,8 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
     return list.slice(0, 5);
   }, [stats, trackSort]);
 
+  const resumeTrack = interruptedSession?.queue[interruptedSession.currentIndex];
+
   const formatTime = (ts: number) => {
     return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   };
@@ -265,7 +259,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
             </button>
 
             {isActionsOpen && (
-              <div 
+              <div
                 className="absolute right-0 mt-2 w-48 rounded-xl bg-[#141418] border border-white/10 shadow-2xl p-1 z-30 space-y-0.5 animate-fade-in"
                 onMouseLeave={() => setIsActionsOpen(false)}
               >
@@ -314,13 +308,13 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
             </div>
 
             <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 border border-white/10 flex-shrink-0 relative">
-              {interruptedSession && interruptedSession.queue[0]?.thumbnail ? (
-                <img src={interruptedSession.queue[0].thumbnail} alt="" className="w-full h-full object-cover" />
+              {resumeTrack?.thumbnail ? (
+                <img src={resumeTrack.thumbnail} alt="" className="w-full h-full object-cover" />
               ) : history[0] ? (
-                <img 
-                  src={trackArtworkMap.get(history[0].track_id) || (history[0].track_id?.length === 11 ? `https://i.ytimg.com/vi/${history[0].track_id}/hqdefault.jpg` : '')} 
-                  alt="" 
-                  className="w-full h-full object-cover" 
+                <img
+                  src={trackArtworkMap.get(history[0].track_id) || (history[0].track_id?.length === 11 ? `https://i.ytimg.com/vi/${history[0].track_id}/hqdefault.jpg` : '')}
+                  alt=""
+                  className="w-full h-full object-cover"
                   onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
                 />
               ) : (
@@ -335,13 +329,13 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
                 Resume Interrupted Listening
               </div>
               <div className="text-sm sm:text-base font-serif text-white font-medium truncate mt-0.5">
-                {interruptedSession 
-                  ? interruptedSession.sessionName 
+                {interruptedSession
+                  ? (resumeTrack?.title || 'Previous session')
                   : (history[0]?.title || 'Resume Previous Session')}
               </div>
               <div className="text-xs text-zinc-400 truncate">
-                {interruptedSession 
-                  ? `${interruptedSession.queue[interruptedSession.currentIndex]?.artist || 'Ghosttunes'} • ${interruptedSession.queue.length} tracks queued`
+                {interruptedSession
+                  ? `${resumeTrack?.artist || 'Ghosttunes'} • ${interruptedSession.queue.length} tracks queued`
                   : `${history[0]?.artist || 'Ghosttunes'} • Ready to resume`}
               </div>
             </div>
@@ -396,7 +390,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
               <div className="text-base sm:text-lg font-bold text-white font-mono">
                 {stats.totalPlays > 0 ? `${stats.totalPlays} plays` : '0 plays'}
               </div>
-              <div className="text-xs text-zinc-400 font-sans mt-0.5">Total listening time</div>
+              <div className="text-xs text-zinc-400 font-sans mt-0.5">Total plays</div>
             </div>
           </div>
 
@@ -420,7 +414,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
             </div>
             <div>
               <div className="text-base sm:text-lg font-bold text-white font-mono">
-                {stats.topArtists.length}
+                {stats.uniqueArtists ?? stats.topArtists.length}
               </div>
               <div className="text-xs text-zinc-400 font-sans mt-0.5">Unique artists</div>
             </div>
@@ -465,7 +459,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
                   </button>
 
                   {isArtistSortOpen && (
-                    <div 
+                    <div
                       className="absolute right-0 mt-1 w-32 rounded-xl bg-[#16171c] border border-white/10 shadow-xl p-1 z-30 space-y-0.5"
                       onMouseLeave={() => setIsArtistSortOpen(false)}
                     >
@@ -553,7 +547,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
                   </button>
 
                   {isTrackSortOpen && (
-                    <div 
+                    <div
                       className="absolute right-0 mt-1 w-32 rounded-xl bg-[#16171c] border border-white/10 shadow-xl p-1 z-30 space-y-0.5"
                       onMouseLeave={() => setIsTrackSortOpen(false)}
                     >
@@ -629,7 +623,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
                             <div className="text-sm font-medium text-zinc-100 group-hover:text-[#e0536c] truncate transition-colors">
                               {tr.title}
                             </div>
-                            <div 
+                            <div
                               onClick={(e) => {
                                 if (onOpenArtist) {
                                   e.stopPropagation();
@@ -829,7 +823,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
 
                         {/* Favorite Button */}
                         <button
-                          onClick={() => toggleFavorite(item.track_id)}
+                          onClick={() => onToggleFavorite?.({ id: item.track_id, title: item.title, artist: item.artist, album: item.album, duration: formatDuration(item.duration), durationSeconds: item.duration, thumbnail: trackArtworkMap.get(item.track_id) || '' })}
                           className="p-1.5 text-zinc-500 hover:text-rose-500 transition-colors cursor-pointer"
                           title={isFav ? "Favorited" : "Add to favorites"}
                         >
