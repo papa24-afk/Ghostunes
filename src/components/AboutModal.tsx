@@ -179,6 +179,22 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
               </span>
             </div>
 
+            {/* Core Contributor Card */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+              <div className="flex flex-col">
+                <span className="text-xs text-zinc-400 font-medium">Core Contributor</span>
+                <span className="text-[10px] text-zinc-500 font-sans">Desktop & Mobile Polish</span>
+              </div>
+              <button
+                onClick={() => openExternalLink('https://github.com/kopoks')}
+                className="text-xs font-semibold text-[#ff8099] hover:text-white tracking-wide font-mono px-2 py-1 rounded bg-[#e0536c]/10 hover:bg-[#e0536c]/20 border border-[#e0536c]/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                title="View @kopoks profile on GitHub"
+              >
+                <span>@kopoks</span>
+                <ExternalLink className="w-3 h-3 opacity-70" />
+              </button>
+            </div>
+
             {/* Contact Developer via WhatsApp */}
             <button
               onClick={() => openExternalLink(whatsappUrl)}

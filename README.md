@@ -170,6 +170,40 @@ We welcome contributions from developers worldwide! Please review our [Contribut
 
 ---
 
+## 👥 Contributors & Credits
+
+Special thanks to the developers and contributors who help build and refine Ghosttunes:
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="160px">
+        <a href="https://github.com/papa24-afk">
+          <img src="https://github.com/papa24-afk.png?size=100" width="80px;" alt="D!g!†@L G#0$†" style="border-radius:50%"/>
+          <br />
+          <sub><b>D!g!†@L G#0$†</b></sub>
+        </a>
+        <br />
+        <sub>Creator & Lead</sub>
+      </td>
+      <td align="center" width="160px">
+        <a href="https://github.com/kopoks">
+          <img src="https://github.com/kopoks.png?size=100" width="80px;" alt="Kingsley Opoku" style="border-radius:50%"/>
+          <br />
+          <sub><b>Kingsley Opoku</b></sub>
+        </a>
+        <br />
+        <sub>Core Contributor</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
+* **D!g!†@L G#0$†** ([@papa24-afk](https://github.com/papa24-afk)): Project creator, audio streaming core, UI architecture, and release distribution.
+* **Kingsley Opoku** ([@kopoks](https://github.com/kopoks)): Core contributor — Desktop experience polish, modular Home View & Track Collection, session timelines, and Android platform support.
+
+---
+
 ## 🔒 Security
 
 For security vulnerability disclosures, please refer to our [Security Policy](SECURITY.md). Do not report vulnerabilities publicly via GitHub issues.

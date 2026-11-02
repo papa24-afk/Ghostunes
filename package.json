@@ -4,6 +4,12 @@
   "version": "1.0.7",
   "description": "Ghosttunes — Premium Music Player for Windows & macOS",
   "author": "D!g!†@L G#0$†",
+  "contributors": [
+    {
+      "name": "Kingsley Opoku",
+      "url": "https://github.com/kopoks"
+    }
+  ],
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
