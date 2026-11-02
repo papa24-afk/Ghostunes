@@ -83,21 +83,6 @@ jobs:
       - name: Build web application
         run: npm run build
 
-      - name: Generate macOS ICNS icon
-        run: |
-          mkdir -p build/icon.iconset
-          sips -z 16 16     build/icon.png --out build/icon.iconset/icon_16x16.png
-          sips -z 32 32     build/icon.png --out build/icon.iconset/icon_16x16@2x.png
-          sips -z 32 32     build/icon.png --out build/icon.iconset/icon_32x32.png
-          sips -z 64 64     build/icon.png --out build/icon.iconset/icon_32x32@2x.png
-          sips -z 128 128   build/icon.png --out build/icon.iconset/icon_128x128.png
-          sips -z 256 256   build/icon.png --out build/icon.iconset/icon_128x128@2x.png
-          sips -z 256 256   build/icon.png --out build/icon.iconset/icon_256x256.png
-          sips -z 512 512   build/icon.png --out build/icon.iconset/icon_256x256@2x.png
-          sips -z 512 512   build/icon.png --out build/icon.iconset/icon_512x512.png
-          iconutil -c icns build/icon.iconset -o build/icon.icns
-          rm -rf build/icon.iconset
-
       - name: Package macOS DMG & ZIP
         run: npx electron-builder --mac dmg zip --publish never
         env:
@@ -120,7 +105,7 @@ jobs:
     name: Publish Multi-Platform GitHub Release
     runs-on: ubuntu-latest
     needs: [build-windows, build-mac]
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: always() && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Check out repository
@@ -128,12 +113,14 @@ jobs:
 
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: windows-artifacts
           path: release-assets
 
       - name: Download macOS Artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: macos-artifacts
           path: release-assets
