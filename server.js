@@ -1,4 +1,5 @@
 import express from 'express';
+import { extractBestThumbnail } from './serverArtwork.js';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
@@ -117,26 +118,6 @@ function upgradeArtworkUrl(url) {
     return url.replace(/\/\d+x\d+bb\./, '/1000x1000bb.');
   }
   return url;
-}
-
-function extractBestThumbnail(item, fallbackId) {
-  if (!item) return fallbackId ? `https://i.ytimg.com/vi/${fallbackId}/maxresdefault.jpg` : '';
-  const thumbs = item.thumbnails || item.thumbnail?.contents || item.thumbnail;
-  if (Array.isArray(thumbs) && thumbs.length > 0) {
-    const sorted = [...thumbs].sort((a, b) => (b.width || 0) - (a.width || 0));
-    const url = sorted[0]?.url || thumbs[thumbs.length - 1]?.url;
-    if (url) return upgradeArtworkUrl(url);
-  }
-  if (typeof thumbs === 'object' && thumbs?.url) {
-    return upgradeArtworkUrl(thumbs.url);
-  }
-  if (typeof item.thumbnail === 'string') {
-    return upgradeArtworkUrl(item.thumbnail);
-  }
-  if (fallbackId) {
-    return `https://i.ytimg.com/vi/${fallbackId}/maxresdefault.jpg`;
-  }
-  return '';
 }
 
 async function upgradeArtworkOnDisk(filePath, id) {

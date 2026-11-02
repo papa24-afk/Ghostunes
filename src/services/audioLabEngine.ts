@@ -6,48 +6,48 @@ export const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16
 export const AUDIO_LAB_PRESETS: AudioLabPreset[] = [
   {
     id: 'flat',
-    name: 'Flat / Studio Reference',
-    description: 'Completely uncolored, transparent monitor profile.',
+    name: 'Flat',
+    description: 'Keep the original sound.',
     gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     preamp: 0,
     normalizer: false
   },
   {
     id: 'bass_boost',
-    name: 'Ghost Sub-Bass Punch',
-    description: 'Deep, resonant sub-bass elevation for electronic, hip-hop, and club music.',
+    name: 'Bass boost',
+    description: 'More weight and punch in the low end.',
     gains: [7, 6, 4, 1, 0, 0, 0, 1, 2, 2],
     preamp: -2,
     normalizer: true
   },
   {
     id: 'vocal_clarity',
-    name: 'Vocal Presence & Intelligibility',
-    description: 'Sculpts away lower mid mud and enhances vocal air between 1kHz and 4kHz.',
+    name: 'Vocals',
+    description: 'Bring voices forward for clearer listening.',
     gains: [-2, -2, -1, 0, 2, 4, 4, 3, 1, 0],
     preamp: 0,
     normalizer: true
   },
   {
     id: 'acoustic',
-    name: 'Acoustic & Unplugged',
-    description: 'Warm organic body with delicate sparkle for strings, piano, and live instruments.',
+    name: 'Acoustic',
+    description: 'A warm sound for strings, piano, and live music.',
     gains: [3, 2, 1, 0, 0, 1, 2, 3, 4, 3],
     preamp: 0,
     normalizer: false
   },
   {
     id: 'electronic',
-    name: 'Electronic Modern Club',
-    description: 'Scooped mids with elevated punchy sub-lows and ultra-crisp highs.',
+    name: 'Electronic',
+    description: 'Stronger bass and brighter highs.',
     gains: [6, 5, 2, -1, -2, 0, 2, 4, 5, 6],
     preamp: -1.5,
     normalizer: true
   },
   {
     id: 'late_night',
-    name: 'Late Night Velvet',
-    description: 'Softens high transient spikes and levels dynamics for fatigue-free listening.',
+    name: 'Night',
+    description: 'Softer highs and gentler volume changes.',
     gains: [2, 2, 1, 1, 0, 0, -1, -2, -4, -6],
     preamp: 0,
     normalizer: true

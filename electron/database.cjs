@@ -471,6 +471,10 @@ class GhosttunesDatabase {
         id, track_id, title, artist, album, duration, played_at,
         duration_played, completion_ratio, session_id, source
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        duration = excluded.duration,
+        duration_played = MAX(listening_history.duration_played, excluded.duration_played),
+        completion_ratio = MAX(listening_history.completion_ratio, excluded.completion_ratio)
     `);
 
     stmt.run(
@@ -498,6 +502,13 @@ class GhosttunesDatabase {
   }
 
   getListeningStats() {
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    const counts = this.db.prepare(`
+      SELECT COUNT(DISTINCT NULLIF(TRIM(artist), '')) as artists,
+             COUNT(DISTINCT CASE WHEN TRIM(album) != '' THEN LOWER(TRIM(artist)) || '::' || LOWER(TRIM(album)) END) as albums,
+             COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_played ELSE 0 END), 0) as today_seconds
+      FROM listening_history
+    `).get(todayStart);
     const totalRow = this.db.prepare(`
       SELECT COUNT(*) as total_plays, COALESCE(SUM(duration_played), 0) as total_seconds
       FROM listening_history
@@ -539,6 +550,9 @@ class GhosttunesDatabase {
       totalPlays: totalRow ? totalRow.total_plays : 0,
       totalListeningMinutes: totalRow ? Math.round(totalRow.total_seconds / 60) : 0,
       uniqueTracks: discoveryRow ? discoveryRow.unique_tracks : 0,
+      uniqueArtists: counts.artists,
+      uniqueAlbums: counts.albums,
+      todayListeningMinutes: Math.round(counts.today_seconds / 60),
       topArtists: topArtists || [],
       topTracks: topTracks || []
     };

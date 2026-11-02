@@ -31,6 +31,7 @@ import { toggleDesktopFullscreen, subscribeFullscreenChange } from '../services/
 
 interface Props {
   track: Track;
+  isActive?: boolean;
   prevTrack?: Track;
   nextTrack?: Track;
   currentTime: number;
@@ -68,6 +69,7 @@ interface Props {
 
 export const CinematicLyricsView: React.FC<Props> = ({
   track,
+  isActive = true,
   prevTrack,
   nextTrack,
   currentTime,
@@ -350,10 +352,12 @@ export const CinematicLyricsView: React.FC<Props> = ({
     wakeControls();
   };
 
-  // Keyboard controls
+  // Hidden lyrics views stay mounted for transitions, but must not consume shortcuts.
   useEffect(() => {
+    if (!isActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, button, [contenteditable=true], [role=slider], [role=button]')) return;
 
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
@@ -401,7 +405,7 @@ export const CinematicLyricsView: React.FC<Props> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentTime, duration, volume, onPlayPause, onSeek, onVolumeChange, onClose]);
+  }, [isActive, currentTime, duration, volume, onPlayPause, onSeek, onVolumeChange, onClose, onNext, onPrev]);
 
   return (
     <div

@@ -7,7 +7,7 @@
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-sqlite test_desktop_engine.cjs",
+    "test": "node --experimental-sqlite test_desktop_engine.cjs && node --experimental-sqlite tests/desktop-experience.cjs && node tests/artwork.cjs",
     "typecheck": "tsc --noEmit",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "client": "vite",
@@ -18,7 +18,11 @@
     "build:desktop": "vite build && electron-builder --dir",
     "build:installer": "vite build && electron-builder --win nsis",
     "build:mac": "vite build && electron-builder --mac",
-    "build:apk": "vite build && cap sync android && cd android && gradlew.bat assembleDebug"
+    "build:apk": "node scripts/build-android.cjs",
+    "test:experience": "node --experimental-sqlite tests/desktop-experience.cjs",
+    "test:ui": "node tests/desktop-experience.browser.cjs && node tests/artwork-layout.browser.cjs",
+    "verify:android": "node scripts/build-android.cjs --verify",
+    "test:android:ui": "node tests/android-mobile.browser.cjs"
   },
   "build": {
     "appId": "com.ghosttunes.app",
@@ -35,6 +39,7 @@
     "asarUnpack": [
       "server.js",
       "serverPlaylistImport.js",
+      "serverArtwork.js",
       "node_modules/**/*"
     ],
     "directories": {
@@ -45,6 +50,7 @@
       "electron/**/*",
       "server.js",
       "serverPlaylistImport.js",
+      "serverArtwork.js",
       "package.json"
     ],
     "win": {

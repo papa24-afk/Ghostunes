@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Track, ArtistProfile, AlbumDetails, ArtistRelease, RelatedArtist } from '../types';
 import { getApiUrl } from '../utils/api';
 import { ArtistAvatar } from './ArtistAvatar';
+import { Artwork } from './Artwork';
 import { 
   ChevronLeft, 
   Play, 
@@ -312,7 +313,7 @@ export const ArtistProfileView: React.FC<ArtistProfileViewProps> = ({
 
                     {/* Track Artwork */}
                     <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-900 border border-white/10 shrink-0">
-                      <img src={t.thumbnail} alt="" className="w-full h-full object-cover" />
+                      <Artwork src={t.thumbnail} trackId={t.id} />
                     </div>
 
                     {/* Title & Album */}
@@ -400,7 +401,7 @@ export const ArtistProfileView: React.FC<ArtistProfileViewProps> = ({
               >
                 <div className="aspect-square w-full rounded-xl overflow-hidden bg-zinc-900 border border-white/10 mb-2 relative">
                   {album.thumbnail ? (
-                    <img src={album.thumbnail} alt={album.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <Artwork src={album.thumbnail} alt={album.title} className="group-hover:scale-105 transition-transform duration-300" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-800">
                       <Disc3 className="w-8 h-8" />
@@ -444,7 +445,7 @@ export const ArtistProfileView: React.FC<ArtistProfileViewProps> = ({
               >
                 <div className="aspect-square w-full rounded-xl overflow-hidden bg-zinc-900 border border-white/10 mb-2 relative">
                   {single.thumbnail ? (
-                    <img src={single.thumbnail} alt={single.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <Artwork src={single.thumbnail} alt={single.title} className="group-hover:scale-105 transition-transform duration-300" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-800">
                       <Disc3 className="w-8 h-8" />
@@ -519,7 +520,7 @@ export const ArtistProfileView: React.FC<ArtistProfileViewProps> = ({
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-16 h-16 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0">
                   {albumData?.thumbnail ? (
-                    <img src={albumData.thumbnail} alt="" className="w-full h-full object-cover" />
+                    <Artwork src={albumData.thumbnail} />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-800">
                       <Disc3 className="w-8 h-8" />

@@ -46,7 +46,7 @@ import {
   Info,
   Compass,
   Plus,
-  Settings
+  Settings, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { DownloadsView } from './DownloadsView';
 import { MusicMemoryView } from './MusicMemoryView';
@@ -57,12 +57,16 @@ import { TrackPalette, getFallbackPalette } from '../utils/palette';
 import { segmentParagraphLyrics, getChronologicalLyrics, findActiveLyricIndex } from '../utils/lyricsParser';
 import { GhostSkinProfile, getFallbackGhostSkin } from '../utils/ghostSkin';
 import { ExploreView } from './ExploreView';
+import { HomeView } from './HomeView';
+import { Artwork } from './Artwork';
+import { musicMemory } from '../services/musicMemoryService';
 import { toggleDesktopFullscreen, subscribeFullscreenChange, openExternalLink } from '../services/desktopService';
 import ghostIcon from '../assets/icon.png';
 import ghostIconSvg from '../assets/icon.svg';
 
 interface Props {
   track: Track | null;
+  keyboardShortcutsEnabled?: boolean;
   currentTime: number;
   duration: number;
   isPlaying: boolean;
@@ -110,8 +114,8 @@ interface Props {
   isExploreOpen?: boolean;
 
   // New Editorial Navigation and Explore & Search View props
-  currentView: 'home' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist';
-  onViewChange: (view: 'home' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist') => void;
+  currentView: 'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist';
+  onViewChange: (view: 'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist') => void;
   artistQuery?: { id?: string; name: string } | null;
   onOpenArtist?: (name: string, id?: string) => void;
   onBackFromArtist?: () => void;
@@ -160,10 +164,16 @@ interface Props {
   onChangeAutoplayMode?: (mode: AutoplayMode) => void;
   onRemoveFromQueue?: (trackId: string, index: number) => void;
   hasUpdate?: boolean;
+  onPlayQueueTrack?: (index: number) => void;
+  onMoveQueueTrack?: (from: number, to: number) => void;
+  playbackStatus?: string;
+  playbackError?: string | null;
+  onRetryPlayback?: () => void;
 }
 
 export const DesktopPlayerView: React.FC<Props> = ({
   track,
+  keyboardShortcutsEnabled = true,
   currentTime,
   duration,
   isPlaying,
@@ -257,13 +267,35 @@ export const DesktopPlayerView: React.FC<Props> = ({
   onRemoveFromQueue,
   artistQuery,
   onOpenArtist,
-  onBackFromArtist
+  onBackFromArtist,
+  onMoveQueueTrack,
+  onPlayQueueTrack,
+  playbackStatus = 'idle',
+  playbackError,
+  onRetryPlayback
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
   const [isStudioMenuOpen, setIsStudioMenuOpen] = useState(false);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [viewHistory, setViewHistory] = useState<Props['currentView'][]>([currentView]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const historyTraversalRef = useRef(false);
+  const savedSession = useMemo(() => musicMemory.getSavedSessionSnapshot(), [currentView, track?.id]);
+  useEffect(() => {
+    if (historyTraversalRef.current) { historyTraversalRef.current = false; return; }
+    if (viewHistory[historyIndex] === currentView) return;
+    setViewHistory(previous => [...previous.slice(0, historyIndex + 1), currentView]);
+    setHistoryIndex(historyIndex + 1);
+  }, [currentView]);
+  const travelTo = (index: number) => {
+    if (index < 0 || index >= viewHistory.length) return;
+    historyTraversalRef.current = true;
+    setHistoryIndex(index);
+    onViewChange(viewHistory[index]);
+  };
+
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -279,9 +311,9 @@ export const DesktopPlayerView: React.FC<Props> = ({
 
   const [autoCollapseOnPlay, setAutoCollapseOnPlay] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('ghosttunes_auto_collapse_on_play') !== 'false';
+      return localStorage.getItem('ghosttunes_auto_collapse_on_play') === 'true';
     }
-    return true;
+    return false;
   });
 
   const [expandedPlaylistIds, setExpandedPlaylistIds] = useState<Set<string>>(new Set(['sb-gospel']));
@@ -379,68 +411,6 @@ export const DesktopPlayerView: React.FC<Props> = ({
     setScrubTime(null);
   };
 
-  const handleScrubberMouseDown = (e: React.MouseEvent) => {
-    setIsScrubbing(true);
-    const newTime = calculateScrubTime(e.clientX);
-    setScrubTime(newTime);
-  };
-
-  const handleScrubberTouchStart = (e: React.TouchEvent) => {
-    setIsScrubbing(true);
-    const newTime = calculateScrubTime(e.touches[0].clientX);
-    setScrubTime(newTime);
-  };
-
-  useEffect(() => {
-    if (!isScrubbing) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newTime = calculateScrubTime(e.clientX);
-      setScrubTime(newTime);
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        const newTime = calculateScrubTime(e.touches[0].clientX);
-        setScrubTime(newTime);
-      }
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      setIsScrubbing(false);
-      const newTime = calculateScrubTime(e.clientX);
-      setScrubTime(null);
-      onSeek(newTime);
-    };
-
-    const handleTouchEnd = () => {
-      setIsScrubbing(false);
-      if (scrubTime !== null) {
-        onSeek(scrubTime);
-      }
-      setScrubTime(null);
-    };
-
-    const handleTouchCancel = () => {
-      setIsScrubbing(false);
-      setScrubTime(null);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('touchmove', handleTouchMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('touchend', handleTouchEnd);
-    window.addEventListener('touchcancel', handleTouchCancel);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('touchend', handleTouchEnd);
-      window.removeEventListener('touchcancel', handleTouchCancel);
-    };
-  }, [isScrubbing, scrubTime, duration, onSeek]);
-
   // Per-song adaptive palette fallback if not passed by parent
   const activePalette = useMemo(() => {
     return passedPalette || getFallbackPalette(track?.id, track?.title, track?.artist);
@@ -510,10 +480,12 @@ export const DesktopPlayerView: React.FC<Props> = ({
   const activeDisplayTime = isScrubbing && scrubTime !== null ? scrubTime : currentTime;
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (activeDisplayTime / duration) * 100)) : 0;
 
-  // Keyboard navigation
+  // Only the visible playback screen owns keyboard shortcuts.
   useEffect(() => {
+    if (!keyboardShortcutsEnabled) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, button, [contenteditable=true], [role=slider], [role=button]')) return;
 
       if (e.key === 'ArrowRight') {
         e.preventDefault();
@@ -558,11 +530,12 @@ export const DesktopPlayerView: React.FC<Props> = ({
       } else if (e.key === 'Escape') {
         if (isQueueOpen) setIsQueueOpen(false);
         if (isWallpaperModalOpen) setIsWallpaperModalOpen(false);
+        setIsStudioMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onNext, onPrev, onPlayPause, onSeek, currentTime, duration, volume, onVolumeChange, onOpenLyrics, isQueueOpen, isWallpaperModalOpen]);
+  }, [keyboardShortcutsEnabled, onNext, onPrev, onPlayPause, onSeek, currentTime, duration, volume, onVolumeChange, onOpenLyrics, isQueueOpen, isWallpaperModalOpen]);
 
   // Wheel navigation (debounced)
   const lastWheelTime = useRef(0);
@@ -692,13 +665,13 @@ export const DesktopPlayerView: React.FC<Props> = ({
   return (
     <div
       id="desktop-player-canvas"
-      className="w-full h-screen h-[100vh] bg-transparent text-white flex flex-col justify-between overflow-hidden relative font-['Inter',sans-serif] select-none"
+      className="w-full h-screen h-[100dvh] bg-transparent text-white flex flex-col justify-between overflow-hidden relative font-['Inter',sans-serif] select-none"
     >
       {/* =========================================================================
           TOP EDITORIAL NAVIGATION BAR: Brand Wordmark, Tabs, Search & Quick Actions
          ========================================================================= */}
       <header className={`titlebar-drag-region relative z-30 w-full ${
-        isMac ? 'pl-[84px] pr-6' : 'pl-6 sm:pl-10 pr-6 sm:pr-36 md:pr-40'
+        window.electronAPI?.platform === 'darwin' ? 'pl-[84px] pr-6' : window.electronAPI?.isElectron ? 'pl-4 pr-36 md:pr-40' : 'px-4'
       } pt-3.5 pb-2.5 flex items-center justify-between pointer-events-auto flex-shrink-0 bg-[#09090b]/90 backdrop-blur-md border-b border-white/[0.04]`}>
         {/* Left: Sidebar Toggle, Brand Wordmark & Primary Tabs */}
         <div className="flex items-center gap-4 sm:gap-6">
@@ -740,97 +713,14 @@ export const DesktopPlayerView: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="flex items-center gap-1 sm:gap-1.5 titlebar-no-drag">
-            <button
-              onClick={handleGoHome}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer ${
-                currentView === 'home'
-                  ? 'text-white font-semibold bg-white/10 shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title="Home"
-              aria-label="Home"
-            >
-              <Home className="w-3.5 h-3.5" />
-              <span>Home</span>
-            </button>
-
-            <button
-              onClick={() => onViewChange('explore')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer ${
-                currentView === 'explore'
-                  ? 'text-white font-semibold bg-white/10 shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title="Explore & Search"
-              aria-label="Explore & Search"
-            >
-              <span>Explore</span>
-            </button>
-
-            <button
-              onClick={() => onViewChange('library')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer ${
-                currentView === 'library'
-                  ? 'text-white font-semibold bg-white/10 shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title="Your Library"
-              aria-label="Your Library"
-            >
-              <span>Library</span>
-            </button>
-
-            <button
-              onClick={() => onViewChange('favorites')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer ${
-                currentView === 'favorites'
-                  ? 'text-white font-semibold bg-white/10 shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title="Favourites"
-              aria-label="Favourites"
-            >
-              <Heart className={`w-3.5 h-3.5 ${currentView === 'favorites' ? 'fill-rose-500 text-rose-500' : ''}`} />
-              <span>Favourites</span>
-            </button>
-
-            <button
-              onClick={() => onViewChange('downloads')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer ${
-                currentView === 'downloads'
-                  ? 'text-white font-semibold bg-white/10 shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title="Downloads & Offline Library"
-              aria-label="Downloads & Offline Library"
-            >
-              <Download className="w-3.5 h-3.5 text-zinc-300" />
-              <span>Downloads</span>
-              {isOfflineMode && (
-                <span className="w-1.5 h-1.5 rounded-full bg-[#9e2a40]" title="Offline Mode" />
-              )}
-            </button>
-
-            <button
-              onClick={() => onViewChange('memory')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer ${
-                currentView === 'memory'
-                  ? 'text-white font-semibold bg-white/10 shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title="Listening Stats & History"
-              aria-label="Stats"
-            >
-              <BarChart3 className="w-3.5 h-3.5 text-zinc-300" />
-              <span>Stats</span>
-            </button>
-          </nav>
+          <div className="hidden md:flex items-center gap-1 titlebar-no-drag" aria-label="Navigation history">
+            <button onClick={() => travelTo(historyIndex - 1)} disabled={historyIndex === 0} title="Go back" aria-label="Go back" className="p-2 rounded-full hover:bg-white/5 disabled:opacity-25"><ChevronLeft className="w-4 h-4" /></button>
+            <button onClick={() => travelTo(historyIndex + 1)} disabled={historyIndex === viewHistory.length - 1} title="Go forward" aria-label="Go forward" className="p-2 rounded-full hover:bg-white/5 disabled:opacity-25"><ChevronRight className="w-4 h-4" /></button>
+          </div>
         </div>
 
         {/* Center: Integrated Top Search Bar */}
-        <div className="flex-1 max-w-sm sm:max-w-md mx-4 hidden md:block titlebar-no-drag">
+        <div className="flex-1 min-w-0 max-w-xl mx-4 hidden md:block titlebar-no-drag">
           <form 
             onSubmit={(e) => {
               e.preventDefault();
@@ -842,7 +732,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
           >
             <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search music"
               value={searchQuery}
               onChange={(e) => {
                 onSearchChange(e.target.value);
@@ -850,7 +741,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   onViewChange('explore');
                 }
               }}
-              placeholder="Search songs, artists, albums..."
+              placeholder="Search songs and artists…"
               className="w-full bg-[#141417] hover:bg-[#18181c] focus:bg-[#151518] border border-white/10 focus:border-white/30 rounded-full pl-9 pr-9 py-1.5 text-xs sm:text-sm text-white placeholder-zinc-500 outline-none transition-all shadow-inner"
             />
             {searchQuery && (
@@ -869,6 +760,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
 
         {/* Right: Primary Creative Tools & Consolidated Studio Utilities */}
         <div className="flex items-center gap-2 titlebar-no-drag">
+          <button onClick={() => onViewChange('now-playing')} disabled={!track} aria-pressed={currentView === 'now-playing'} className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs border disabled:opacity-40 ${currentView === 'now-playing' ? 'border-[#9e2a40] bg-[#9e2a40]/20 text-rose-300' : 'border-white/10 text-zinc-300 hover:bg-white/5'}`} title="Open Now Playing" aria-label="Open Now Playing"><Disc3 className="w-4 h-4" /><span className="hidden lg:inline">Now Playing</span></button>
           {onOpenAudioLab && (
             <button
               onClick={onOpenAudioLab}
@@ -909,8 +801,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
             <button
               onClick={() => setIsStudioMenuOpen(!isStudioMenuOpen)}
               className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 flex items-center justify-center text-zinc-400 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/30 cursor-pointer"
-              title="Studio Utilities"
-              aria-label="Studio Utilities"
+              title="Settings & help"
+              aria-label="Settings & help" aria-expanded={isStudioMenuOpen}
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
@@ -967,6 +859,14 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 )}
 
                 <div className="border-t border-white/[0.06] my-1" />
+                <p className="px-3 pt-2 text-[10px] uppercase tracking-wider text-zinc-500">Preferences</p>
+                <label className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-zinc-300 cursor-pointer">
+                  Auto-collapse sidebar on play
+                  <input type="checkbox" checked={autoCollapseOnPlay} onChange={event => setAutoCollapseOnPlay(event.target.checked)} className="accent-rose-500" />
+                </label>
+                <p className="px-3 pt-2 text-[10px] uppercase tracking-wider text-zinc-500">Help</p>
+                <button onClick={() => { setIsStudioMenuOpen(false); openExternalLink('https://wa.me/kobb.y298'); }} className="collection-menu-item text-xs"><Info className="w-4 h-4" />Contact developer</button>
+
 
                 {onOpenBackupModal && (
                   <button
@@ -1018,7 +918,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 onViewChange('explore');
               }
             }}
-            placeholder="Search songs, artists, albums..."
+            placeholder="Search songs and artists…"
             className="w-full bg-[#141417] hover:bg-[#18181c] border border-white/10 rounded-full pl-9 pr-9 py-1.5 text-xs text-white placeholder-zinc-500 outline-none transition-all shadow-inner"
           />
           {searchQuery && (
@@ -1219,18 +1119,6 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   </button>
                 )}
 
-                {/* WhatsApp Contact Developer */}
-                <button
-                  onClick={() => openExternalLink('https://wa.me/kobb.y298')}
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/10 transition-colors cursor-pointer group"
-                  title="Contact Developer (WhatsApp: D!g!†@L G#0$†)"
-                  aria-label="Contact Developer"
-                >
-                  <svg className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-                  </svg>
-                </button>
-
                 {/* About Ghosttunes / Settings */}
                 {onOpenAbout && (
                   <button
@@ -1246,15 +1134,6 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   </button>
                 )}
 
-                {/* Expand Toggle at Bottom of Collapsed Mode */}
-                <button
-                  onClick={() => setIsSidebarCollapsed(false)}
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer mt-1"
-                  title="Expand sidebar"
-                  aria-label="Expand sidebar"
-                >
-                  <PanelLeftOpen className="w-4 h-4 text-[#e0536c]" />
-                </button>
               </div>
             </div>
           ) : (
@@ -1507,24 +1386,6 @@ export const DesktopPlayerView: React.FC<Props> = ({
 
               {/* Bottom Setting: Auto-collapse on play & Collapse action */}
               <div className="pt-4 border-t border-white/[0.06] space-y-2">
-                <div className="flex items-center justify-between px-2 text-[11px] text-zinc-400">
-                  <span className="truncate select-none">Auto-collapse on play</span>
-                  <button
-                    onClick={() => setAutoCollapseOnPlay(!autoCollapseOnPlay)}
-                    className={`w-7 h-4 rounded-full transition-colors relative cursor-pointer outline-none ${
-                      autoCollapseOnPlay ? 'bg-[#9e2a40]' : 'bg-zinc-700'
-                    }`}
-                    title={autoCollapseOnPlay ? 'Auto-collapse is ON' : 'Auto-collapse is OFF'}
-                    aria-label="Toggle auto-collapse on play"
-                  >
-                    <span
-                      className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
-                        autoCollapseOnPlay ? 'left-3.5' : 'left-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-
                 {/* Audio Lab Shortcut */}
                 {onOpenAudioLab && (
                   <button
@@ -1549,22 +1410,6 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   </button>
                 )}
 
-                {/* Contact Developer (WhatsApp) */}
-                <button
-                  onClick={() => openExternalLink('https://wa.me/kobb.y298')}
-                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs text-zinc-300 hover:text-white bg-[#25D366]/[0.08] hover:bg-[#25D366]/[0.15] border border-[#25D366]/20 transition-all cursor-pointer text-left group"
-                  title="Contact Developer D!g!†@L G#0$† on WhatsApp"
-                  aria-label="Contact Developer on WhatsApp"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <svg className="w-3.5 h-3.5 fill-current text-[#25D366] flex-shrink-0 group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
-                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-                    </svg>
-                    <span className="font-medium text-white group-hover:text-emerald-300 transition-colors">Contact Developer</span>
-                  </div>
-                  <span className="text-[10px] text-[#25D366] font-mono font-semibold">WA</span>
-                </button>
-
                 {/* Settings / About Ghosttunes */}
                 {onOpenAbout && (
                   <button
@@ -1585,14 +1430,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   </button>
                 )}
 
-                <button
-                  onClick={() => setIsSidebarCollapsed(true)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
-                  title={isMac ? "Collapse sidebar (⌘B)" : "Collapse sidebar (Ctrl+B)"}
-                >
-                  <PanelLeftClose className="w-3.5 h-3.5" />
-                  <span>Collapse Sidebar</span>
-                </button>
+
               </div>
             </div>
           )}
@@ -1601,13 +1439,19 @@ export const DesktopPlayerView: React.FC<Props> = ({
         {/* Main Content Area beside Sidebar */}
         <div className="flex-1 min-w-0 h-full flex flex-col overflow-y-auto relative">
           {currentView === 'home' ? (
-        <div className="flex-1 w-full min-h-0 flex flex-col lg:flex-row items-center justify-between relative overflow-hidden px-6 sm:px-10 xl:px-16 py-2 pb-24">
+            <HomeView track={track} isPlaying={isPlaying} history={history} favorites={favorites} playlists={playlists} savedSession={savedSession} isDataSaver={isDataSaver}
+              onPlayTrack={onPlayTrack} onPlayPause={onPlayPause} onToggleFavorite={onToggleFavorite || onToggleLike} onNowPlaying={() => onViewChange('now-playing')}
+              onExplore={() => onViewChange('explore')} onLibrary={() => { onSelectPlaylist?.(null); onViewChange('library'); }}
+              onSelectPlaylist={id => { onSelectPlaylist?.(id); onViewChange('library'); }} onResumeSession={onResumeSession}
+              onCreateNewPlaylist={onCreateNewPlaylist} onOpenImportModal={onOpenImportModal} onOpenArtist={onOpenArtist} />
+          ) : currentView === 'now-playing' ? (
+        <div className="flex-1 w-full min-h-0 flex flex-col lg:flex-row items-center justify-between relative overflow-hidden px-6 lg:px-8 py-4 pb-24">
         
         {/* =====================================================================
             LEFT REGION (~44-46% on Desktop): The Realistic 3D Album Focus Stage
            ===================================================================== */}
         <main 
-          className="w-full lg:w-[46%] xl:w-[44%] h-full flex items-center justify-center relative select-none py-2 flex-shrink-0"
+          className="w-full lg:w-[48%] xl:w-[46%] h-full flex items-center justify-center relative select-none py-2 flex-shrink-0"
           onWheel={handleWheel}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
@@ -1745,20 +1589,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   >
                     {/* 1. Square Artwork Container (Edge-to-Edge, Consistent Square, No Black Bars, Object-fit Cover) */}
                     <div className="w-full aspect-square rounded-xl overflow-hidden bg-black relative shadow-inner">
-                      <img
-                        src={artwork}
-                        alt={item.title}
-                        loading={isCenter ? 'eager' : 'lazy'}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102"
-                        onError={(e) => {
-                          const img = e.currentTarget;
-                          if (item.id && !img.src.includes('/api/artwork/')) {
-                            img.src = `http://127.0.0.1:3001/api/artwork/${item.id}`;
-                          } else {
-                            img.src = ghostIcon;
-                          }
-                        }}
-                      />
+                      <Artwork src={item.thumbnail} localSrc={item.local_artwork_url} trackId={item.id} alt={item.title} isDataSaver={isDataSaver} loading="eager" />
 
                       {/* Hover Play Button Overlay for Background Cards */}
                       {!isCenter && (
@@ -2061,6 +1892,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
         />
       ) : currentView === 'memory' ? (
         <MusicMemoryView
+          favorites={favorites}
+          onToggleFavorite={onToggleFavorite}
           onBack={() => onViewChange('home')}
           onPlayTrack={onPlayTrack}
           onResumeSession={onResumeSession}
@@ -2126,23 +1959,18 @@ export const DesktopPlayerView: React.FC<Props> = ({
       {/* =========================================================================
           FIXED BOTTOM PLAYBACK BAR: Compact, Fixed Bar with Burgundy Accents
          ========================================================================= */}
-      <footer className="fixed bottom-0 left-0 right-0 z-40 bg-[#09090b]/95 backdrop-blur-2xl border-t border-white/[0.08] px-6 sm:px-10 py-2.5 flex items-center justify-between gap-4 sm:gap-6 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] pointer-events-auto">
+      {(playbackError || playbackStatus === 'loading' || playbackStatus === 'buffering') && <div role={playbackError ? 'alert' : 'status'} className="fixed bottom-[90px] left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl bg-[#1c151a] border border-rose-500/25 px-4 py-3 shadow-xl max-w-[90vw] text-xs">
+        {!playbackError && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+        <span>{playbackError || (playbackStatus === 'loading' ? 'Loading song…' : 'Buffering…')}</span>
+        {playbackError && onRetryPlayback && <button onClick={onRetryPlayback} className="text-rose-300 whitespace-nowrap font-semibold">Try again</button>}
+      </div>}
+      <footer className="relative z-40 w-full shrink-0 bg-[#09090b]/95 backdrop-blur-2xl border-t border-white/[0.08] px-6 sm:px-10 py-2.5 flex items-center justify-between gap-4 sm:gap-6 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] pointer-events-auto">
         <div className="w-full flex items-center justify-between gap-4 sm:gap-6">
           
           {/* 1. LEFT: Current Track Thumbnail, Title, Artist, and Heart Favorite */}
-          <div className="flex items-center gap-3 min-w-0 sm:w-[240px] flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0 sm:w-[200px] lg:w-[240px] flex-shrink-0">
             <div className="w-11 h-11 rounded-lg overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 shadow">
-              <img
-                src={currentArtwork}
-                alt={currentTitle}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  const img = e.currentTarget;
-                  if (!img.src.includes('ytimg.com') && track?.id) {
-                    img.src = `https://i.ytimg.com/vi/${track.id}/hqdefault.jpg`;
-                  }
-                }}
-              />
+              <Artwork src={activeCurrentTrack?.thumbnail} localSrc={activeCurrentTrack?.local_artwork_url} trackId={activeCurrentTrack?.id} alt={currentTitle} isDataSaver={isDataSaver} />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs sm:text-[13px] font-semibold text-white truncate leading-tight">
@@ -2224,6 +2052,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
               <div className="relative group">
                 <button
                   onClick={onToggleShuffle}
+                  aria-pressed={isShuffle}
                   className={`w-8 h-8 flex items-center justify-center rounded-full transition-all active:scale-95 focus-visible:ring-1 focus-visible:ring-white/25 outline-none cursor-pointer ${
                     isShuffle ? 'text-white bg-white/15' : 'text-zinc-400 hover:text-white hover:bg-white/10'
                   }`}
@@ -2324,7 +2153,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                     isRepeat ? 'text-white bg-white/15' : 'text-zinc-400 hover:text-white hover:bg-white/10'
                   }`}
                   title={isRepeat === 'one' ? 'Repeat One' : isRepeat ? 'Repeat All' : 'Repeat Off'}
-                  aria-label="Toggle Repeat"
+                  aria-label={isRepeat === 'one' ? 'Repeat one song' : isRepeat ? 'Repeat all songs' : 'Repeat off'} aria-pressed={Boolean(isRepeat)}
                 >
                   {isRepeat === 'one' ? <Repeat1 className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
                 </button>
@@ -2345,11 +2174,11 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 onPointerMove={handleScrubberPointerMove}
                 onPointerUp={handleScrubberPointerUp}
                 onPointerCancel={handleScrubberPointerCancel}
-                onMouseDown={handleScrubberMouseDown}
-                onTouchStart={handleScrubberTouchStart}
                 style={{ touchAction: 'none' }}
                 className="relative flex-1 h-7 py-2.5 -my-2 flex items-center cursor-pointer group touch-none select-none"
                 title="Seek / Forward track"
+                role="slider" tabIndex={0} aria-label="Playback position" aria-valuemin={0} aria-valuemax={Math.floor(duration || 0)} aria-valuenow={Math.floor(activeDisplayTime)} aria-valuetext={formatTime(activeDisplayTime)}
+                onKeyDown={event => { if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); event.stopPropagation(); onSeek(Math.max(0, Math.min(duration, currentTime + (event.key === 'ArrowRight' ? 5 : -5)))); } }}
               >
                 <div className="w-full h-1.5 group-hover:h-2 bg-[#27272a] rounded-full overflow-hidden relative transition-all duration-150">
                   <div 
@@ -2365,13 +2194,13 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 />
               </div>
               <span className="text-[10px] font-mono text-zinc-400 w-8 select-none">
-                {duration > 0 ? formatTime(duration) : '4:16'}
+                {duration > 0 ? formatTime(duration) : '0:00'}
               </span>
             </div>
           </div>
 
           {/* 3. RIGHT: Volume, Lyrics, Fullscreen */}
-          <div className="flex items-center gap-2 sm:gap-3 sm:w-[240px] justify-end flex-shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 sm:w-[200px] lg:w-[240px] justify-end flex-shrink-0">
             {/* Volume Control with Burgundy Slider */}
             <div className="hidden sm:flex items-center gap-1.5 px-1 relative group">
               <button
@@ -2426,7 +2255,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   isQueueOpen ? 'text-[#e0536c] bg-[#9e2a40]/20' : 'text-zinc-400 hover:text-white hover:bg-white/10'
                 }`}
                 title="Play Queue (Q)"
-                aria-label="Open Queue"
+                aria-label="Open Queue" aria-expanded={isQueueOpen}
               >
                 <ListMusic className="w-4 h-4" />
               </button>
@@ -2440,13 +2269,13 @@ export const DesktopPlayerView: React.FC<Props> = ({
               <button
                 onClick={onOpenLyrics}
                 className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-all active:scale-95 outline-none cursor-pointer"
-                title="Fullscreen Lyrics (L)"
+                title="Fullscreen lyrics"
                 aria-label="Fullscreen Lyrics"
               >
                 <Music2 className="w-4 h-4" />
               </button>
               <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-zinc-900 border border-white/15 text-[10px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-                Lyrics (L)
+                Lyrics
               </span>
             </div>
 
@@ -2473,8 +2302,9 @@ export const DesktopPlayerView: React.FC<Props> = ({
           SLIDE-OVER QUEUE DRAWER (Real upcoming tracks with instant playback)
          ========================================================================= */}
       <div
-        className={`fixed top-0 bottom-20 left-0 z-50 w-[300px] sm:w-[360px] bg-black/90 backdrop-blur-3xl border-r border-white/10 p-5 transform transition-transform duration-400 ease-out flex flex-col ${
-          isQueueOpen ? 'translate-x-0 shadow-[20px_0_60px_rgba(0,0,0,0.9)]' : '-translate-x-full'
+        inert={!isQueueOpen} role="dialog" aria-label="Play queue" aria-hidden={!isQueueOpen}
+        className={`fixed top-0 bottom-20 right-0 z-50 w-[300px] sm:w-[360px] bg-black/90 backdrop-blur-3xl border-r border-white/10 p-5 transform transition-transform duration-400 ease-out flex flex-col ${
+          isQueueOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'
         }`}
       >
         {/* Drawer Header */}
@@ -2563,7 +2393,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
               <div
                 key={`drawer-${item.id}-${idx}`}
                 onClick={() => {
-                  onPlayTrack(item);
+                  if (onPlayQueueTrack) onPlayQueueTrack(idx);
+                  else onPlayTrack(item, queue);
                   setIsQueueOpen(false);
                 }}
                 className={`group flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 relative ${
@@ -2575,17 +2406,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 }`}
               >
                 <div className="relative w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-900 border border-white/10">
-                  <img
-                    src={thumb}
-                    alt={item.title}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const img = e.currentTarget;
-                      if (!img.src.includes('ytimg.com')) {
-                        img.src = `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`;
-                      }
-                    }}
-                  />
+                  <Artwork src={item.thumbnail} localSrc={item.local_artwork_url} trackId={item.id} alt={item.title} isDataSaver={isDataSaver} />
                   {isActive && isPlaying && (
                     <div className="absolute inset-0 bg-[#9e2a40]/30 flex items-center justify-center">
                       <span className="w-2 h-2 rounded-full bg-[#e0536c] animate-pulse" />
@@ -2624,6 +2445,10 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   {item.duration || '3:30'}
                 </span>
 
+                {onMoveQueueTrack && <div className="flex flex-col shrink-0">
+                  <button disabled={idx <= queueIndex + 1} onClick={event => { event.stopPropagation(); onMoveQueueTrack(idx, idx - 1); }} aria-label={`Move ${item.title} up`} title="Move up" className="p-1 text-zinc-400 hover:text-white disabled:opacity-20"><ArrowUp className="w-3 h-3" /></button>
+                  <button disabled={idx <= queueIndex || idx === activeQueue.length - 1} onClick={event => { event.stopPropagation(); onMoveQueueTrack(idx, idx + 1); }} aria-label={`Move ${item.title} down`} title="Move down" className="p-1 text-zinc-400 hover:text-white disabled:opacity-20"><ArrowDown className="w-3 h-3" /></button>
+                </div>}
                 {onRemoveFromQueue && (
                   <button
                     type="button"

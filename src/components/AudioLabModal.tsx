@@ -44,6 +44,13 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
     audioLab.resume();
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   // Real-time Visualizer Animation Loop
   useEffect(() => {
     if (!isOpen) {
@@ -180,6 +187,7 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md animate-fade-in">
       <div 
         className="relative w-full max-w-3xl bg-zinc-950/95 border border-zinc-800/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        role="dialog" aria-modal="true" aria-label="Audio Lab"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
@@ -192,10 +200,10 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-serif text-white tracking-wide">Audio Lab</h2>
                 <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                  Studio Equalizer & DSP
+                  Sound settings
                 </span>
               </div>
-              <p className="text-xs text-zinc-400">10-band precision biquad filtering, volume limiter & real-time spectrum</p>
+              <p className="text-xs text-zinc-400">Choose a preset, or fine-tune your sound.</p>
             </div>
           </div>
 
@@ -208,7 +216,7 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
                   ? 'bg-rose-950/60 border-rose-500/50 text-rose-300'
                   : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
               }`}
-              title="Toggle EQ Bypass"
+              title="Turn sound effects on or off" aria-label="Sound effects" aria-pressed={!bypassed}
             >
               <Power className="w-3.5 h-3.5" />
               <span>{bypassed ? 'BYPASSED' : 'ACTIVE'}</span>
@@ -217,13 +225,14 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
             <button
               onClick={handleReset}
               className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors"
-              title="Reset to Flat Reference"
+              title="Reset sound settings" aria-label="Reset sound settings"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
 
             <button
               onClick={onClose}
+              aria-label="Close Audio Lab"
               className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
             >
               <X className="w-5 h-5" />
@@ -257,7 +266,7 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
                   visualizerMode === 'waveform' ? 'bg-amber-500 text-black font-semibold' : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Oscilloscope
+                Waveform
               </button>
             </div>
           </div>
@@ -265,7 +274,7 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
           {/* Preset Selector Grid */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs font-mono uppercase text-zinc-400">
-              <span>Studio Master Presets</span>
+              <span>Sound presets</span>
               <span className="text-[10px] text-zinc-500">{currentPreset}</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -279,20 +288,22 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
                       : 'bg-zinc-900/50 hover:bg-zinc-900 border-zinc-800/80 text-zinc-300'
                   }`}
                 >
-                  <div className="text-xs font-semibold font-serif truncate">{p.name}</div>
-                  <div className="text-[10px] text-zinc-400 truncate mt-0.5">{p.description}</div>
+                  <div className="text-xs font-semibold">{p.name}</div>
+                  <div className="text-[11px] text-zinc-400 leading-relaxed mt-1">{p.description}</div>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 10-Band Equalizer Sliders */}
+          {/* Advanced controls remain available without overwhelming the preset view. */}
+          <details className="group">
+            <summary className="text-sm text-zinc-300 cursor-pointer py-2">Advanced equalizer</summary>
           <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-amber-400" />
                 <span className="text-xs font-mono uppercase tracking-wider text-zinc-300">
-                  10-Band Biquad Filter Bank (&plusmn;12 dB)
+                  10-band equalizer (±12 dB)
                 </span>
               </div>
               <div className="flex items-center gap-2 text-xs font-mono">
@@ -304,6 +315,7 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
                   step="0.5"
                   value={preamp}
                   onChange={(e) => handlePreampChange(parseFloat(e.target.value))}
+                  aria-label="Preamp gain"
                   className="w-24 accent-amber-500"
                 />
                 <span className="text-amber-400 w-12 text-right">{preamp > 0 ? `+${preamp}` : preamp} dB</span>
@@ -329,6 +341,7 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
                         step="0.5"
                         value={gain}
                         disabled={bypassed}
+                        aria-label={`${label} gain`}
                         onChange={(e) => handleGainChange(idx, parseFloat(e.target.value))}
                         className="w-32 -rotate-90 accent-amber-500 cursor-pointer disabled:opacity-40"
                       />
@@ -342,6 +355,8 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
             </div>
           </div>
 
+          </details>
+
           {/* Volume Normalizer & Limiter Card */}
           <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/80 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -349,14 +364,15 @@ export const AudioLabModal: React.FC<AudioLabModalProps> = ({
                 <Volume2 className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-semibold text-zinc-200">Dynamics Normalizer & Soft-Knee Limiter</div>
+                <div className="text-xs font-semibold text-zinc-200">Volume balancing & limiter</div>
                 <div className="text-[11px] text-zinc-400">
-                  Balances perceived loudness between tracks and prevents harsh digital clipping.
+                  Reduces sudden volume changes and limits peaks.
                 </div>
               </div>
             </div>
             <button
               onClick={handleToggleNormalizer}
+              aria-label="Volume balancing" aria-pressed={normalizer}
               className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-colors border ${
                 normalizer
                   ? 'bg-amber-500 text-black border-amber-400 font-semibold'

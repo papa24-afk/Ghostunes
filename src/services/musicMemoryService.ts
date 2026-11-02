@@ -1,15 +1,20 @@
 // src/services/musicMemoryService.ts
 import { Track, ListeningHistoryRecord } from '../types';
+import { parseSavedSession, SavedSession } from '../utils/session';
 import { recordListeningPlay, getListeningHistory, getListeningStats, clearListeningHistory, exportListeningData } from './desktopService';
 
-class MusicMemoryTracker {
+export class MusicMemoryTracker {
   private activeTrack: Track | null = null;
   private trackDuration: number = 0;
   private accumulatedSeconds: number = 0;
   private lastTickTime: number = 0;
   private isPlaying: boolean = false;
   private hasRecordedPlay: boolean = false;
-  private sessionId: string = `sess_${Date.now()}`;
+  private playSequence = 0;
+  private playId = '';
+  private startedAt = 0;
+  private lastCheckpointSeconds = 0;
+  private sessionId: string = `sess_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
   public onTrackChange(track: Track | null, duration: number = 0) {
     this.flushCurrentTrackRecord();
@@ -18,7 +23,10 @@ class MusicMemoryTracker {
     this.accumulatedSeconds = 0;
     this.lastTickTime = Date.now();
     this.hasRecordedPlay = false;
-    this.saveSessionState();
+    this.isPlaying = false;
+    this.startedAt = Date.now();
+    this.playId = `${this.sessionId}_${++this.playSequence}`;
+    this.lastCheckpointSeconds = 0;
   }
 
   public onPlaybackStateChange(isPlaying: boolean, currentTime: number = 0) {
@@ -31,9 +39,10 @@ class MusicMemoryTracker {
     }
     this.isPlaying = isPlaying;
     this.lastTickTime = now;
+    if (!isPlaying) this.flushCurrentTrackRecord();
 
     // Check if threshold reached (30 seconds or 50% duration)
-    if (!this.hasRecordedPlay && this.activeTrack) {
+    if ((!this.hasRecordedPlay || this.accumulatedSeconds - this.lastCheckpointSeconds >= 15) && this.activeTrack) {
       const minThreshold = Math.min(30, this.trackDuration * 0.5);
       if (this.accumulatedSeconds >= minThreshold) {
         this.flushCurrentTrackRecord();
@@ -53,7 +62,7 @@ class MusicMemoryTracker {
     }
     this.lastTickTime = now;
 
-    if (!this.hasRecordedPlay && this.activeTrack) {
+    if ((!this.hasRecordedPlay || this.accumulatedSeconds - this.lastCheckpointSeconds >= 15) && this.activeTrack) {
       const minThreshold = Math.min(30, this.trackDuration * 0.5);
       if (this.accumulatedSeconds >= minThreshold) {
         this.flushCurrentTrackRecord();
@@ -69,13 +78,15 @@ class MusicMemoryTracker {
     const qualified = this.accumulatedSeconds >= 30 || completion >= 0.5;
     if (!qualified && this.hasRecordedPlay) return;
 
+    this.lastCheckpointSeconds = this.accumulatedSeconds;
     const record: Partial<ListeningHistoryRecord> = {
+      id: this.playId,
       track_id: this.activeTrack.id,
       title: this.activeTrack.title,
       artist: this.activeTrack.artist,
       album: this.activeTrack.album || '',
       duration: this.trackDuration,
-      played_at: Date.now(),
+      played_at: this.startedAt,
       duration_played: Math.round(this.accumulatedSeconds),
       completion_ratio: Number(completion.toFixed(2)),
       session_id: this.sessionId,
@@ -101,18 +112,11 @@ class MusicMemoryTracker {
     } catch {}
   }
 
-  public getSavedSessionSnapshot(): { queue: Track[]; currentIndex: number; currentTime: number; sessionName: string; savedAt: number } | null {
-    try {
-      const raw = localStorage.getItem('ghost_interrupted_session');
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
+  public getSavedSessionSnapshot(): SavedSession | null {
+    try { return parseSavedSession(localStorage.getItem('ghost_interrupted_session')); }
+    catch { return null; }
   }
 
-  private saveSessionState() {
-    // Quick checkpoint
-  }
 }
 
 export const musicMemory = new MusicMemoryTracker();
