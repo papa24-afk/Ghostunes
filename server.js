@@ -679,6 +679,8 @@ async function getYtdlTrackInfo(videoId) {
 // 3. Audio Streaming Proxy with HTTP 206 Range Support powered by @distube/ytdl-core
 app.get('/api/stream/:id', async (req, res) => {
   const videoId = req.params.id;
+  // Optional ?quality=low for mobile data saving; default stays highest.
+  const audioQuality = req.query.quality === 'low' ? 'lowestaudio' : 'highestaudio';
   const sanitizedId = String(videoId || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
 
   // If local offline download exists on disk, stream it immediately with native 206 byte-ranges
@@ -711,12 +713,12 @@ app.get('/api/stream/:id', async (req, res) => {
     // Prefer MP4 container (AAC) for standard HTML5 byte-range seekability across Chromium and Electron
     let format = chooseFormat(info.formats, { 
       filter: (f) => f.hasAudio && !f.hasVideo && f.container === 'mp4', 
-      quality: 'highestaudio' 
+      quality: audioQuality 
     });
     if (!format) {
       format = chooseFormat(info.formats, { 
         filter: { hasAudio: true, hasVideo: false }, 
-        quality: 'highestaudio' 
+        quality: audioQuality 
       });
     }
     if (!format) {
@@ -749,7 +751,7 @@ app.get('/api/stream/:id', async (req, res) => {
 
         stream = await ytdlClient.download(info, {
           filter: downloadFilter,
-          quality: 'highestaudio',
+          quality: audioQuality,
           range: { start, end }
         });
       }
@@ -762,7 +764,7 @@ app.get('/api/stream/:id', async (req, res) => {
       res.status(200);
       stream = await ytdlClient.download(info, {
         filter: downloadFilter,
-        quality: 'highestaudio'
+        quality: audioQuality
       });
     }
 
@@ -843,9 +845,10 @@ app.get('/api/artwork/:id', (req, res) => {
 // Dedicated audio download endpoint for full track downloads (Desktop app & browser downloads)
 app.get('/api/download/:id', async (req, res) => {
   const videoId = req.params.id;
+  const audioQuality = req.query.quality === 'low' ? 'lowestaudio' : 'highestaudio';
   try {
     const info = await getYtdlTrackInfo(videoId);
-    const format = chooseFormat(info.formats, { filter: { hasAudio: true, hasVideo: false }, quality: 'highestaudio' });
+    const format = chooseFormat(info.formats, { filter: { hasAudio: true, hasVideo: false }, quality: audioQuality });
     const totalLength = format ? (parseInt(format.contentLength, 10) || 0) : 0;
     const mimeType = (format && format.mimeType) ? format.mimeType : 'audio/mp4';
 
@@ -871,7 +874,7 @@ app.get('/api/download/:id', async (req, res) => {
 
         audioStream = await ytdlClient.download(info, {
           filter: { hasAudio: true, hasVideo: false },
-          quality: 'highestaudio',
+          quality: audioQuality,
           range: { start, end }
         });
       }
@@ -884,7 +887,7 @@ app.get('/api/download/:id', async (req, res) => {
       res.status(200);
       audioStream = await ytdlClient.download(info, {
         filter: { hasAudio: true, hasVideo: false },
-        quality: 'highestaudio'
+        quality: audioQuality
       });
     }
 

@@ -1,0 +1,15 @@
+<resources>
+    <style name="Theme.Ghosttunes" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/gt_bg</item>
+        <item name="android:colorBackground">@color/gt_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorAccent">@color/gt_accent</item>
+    </style>
+    <style name="Theme.Ghosttunes.Translucent" parent="Theme.Ghosttunes">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

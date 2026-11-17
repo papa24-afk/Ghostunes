@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Ghosttunes</string>
+    <string name="tile_send_to_pc">Send to PC</string>
+</resources>
