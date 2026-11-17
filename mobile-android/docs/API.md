@@ -242,15 +242,48 @@ Playlist import (`/api/playlist/import/*`), provider auth (`/api/spotify/*`, `/a
 
 ---
 
-## Proposed server additions (small, additive, safe)
+## Server additions for the phone (implemented on this branch)
 
-None of these change existing responses. Each is a new route or an optional query parameter, so the desktop app is unaffected.
+All additive (`serverMobile.js` + small changes in `server.js`); existing responses are unchanged. Verified with curl on 2026-11-17, plus `npm run typecheck`, `npm test` and `tests/handoff-endpoints.cjs` (all passing).
 
-| # | Addition | Why the phone needs it | Size |
-| --- | --- | --- | --- |
-| **S1** | `GET /api/stream/:id/prepare` → `{ok, mimeType, contentLength}`. Runs the existing `getYtdlTrackInfo(id)` (fills the 2 h cache) without streaming. | Cuts time-to-first-sound from ~10 s to <1 s for the next track, and lets a tap warm the stream while the UI animates. | ~15 lines |
-| **S2** | Fix `/api/artist` top tracks to use the real `duration` instead of the `"3:30"/210` placeholder. | Rows would show wrong times; scrubber would be wrong until ExoPlayer reads the file. | ~3 lines |
-| **S3** | `GET /api/search/all?q=` → `{top, songs, artists, albums, playlists}` using `music.search` with `type: 'artist' | 'album' | 'playlist'`. | Search filter chips (Songs / Artists / Albums / Playlists) and the top-result card. Today search returns songs only. | ~60 lines |
-| **S4** | `GET /api/playlist?id=` → `{id, title, author, thumbnail, trackCount, tracks[]}` using `music.getPlaylist` (code already exists in `serverPlaylistImport.js`). | Opening playlists from search results and mixes. | ~30 lines |
+### S1 `GET /api/stream/:id/prepare`
 
-Optional (only if Phase 2 needs it): `GET /api/home/sections` returning several named shelves (charts, new releases, moods) so Home isn't one list. The phone can build Home from `/api/home`, `/api/genre` and `/api/smart-radio` without it, so it's not part of the plan.
+Fills the stream-info cache **and** pulls one byte through the download path (the first download for a track has its own warm-up beyond `getInfo`). The phone calls it for the next track as soon as a track starts.
+
+```
+GET /api/stream/a2YHUTPk6Hc/prepare
+{"ok":true,"id":"a2YHUTPk6Hc","mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","contentLength":3503056,"tookMs":14592}
+then GET /api/stream/a2YHUTPk6Hc  (Range 0-1023)  → 206 in 0.22 s   (was ~10 s cold)
+```
+
+`/api/stream/bad/prepare` → `400 {"error":"invalid_id"}`. Upstream failure → `502 {"ok":false,...}`.
+
+### S2 Artist top-track durations
+
+`/api/artist` top songs now carry real durations (looked up in parallel, 4 s cap, cached with the artist page). Before → after for Burna Boy: `Dai Dai 3:30 → 3:44`, `Last Last 3:30 → 2:53`. If a lookup fails the old placeholder stays.
+
+### S3 `GET /api/search/all?q=`
+
+```json
+{"query":"burna boy",
+ "top":{"type":"artist","item":{"id":"UCr61sufuLt7_eB7ak1bXHIg","name":"Burna Boy","avatar":"…","subtitle":"Artist • 632M monthly audience"}},
+ "songs":[{"id":"KjNRMSyeEok","title":"Pree Me","artist":"Burna Boy","artistId":"UCr61sufuLt7_eB7ak1bXHIg","album":"Redemption","duration":"3:21","durationSeconds":201,"thumbnail":"…"}, …20],
+ "artists":[…10], "albums":[{"id":"MPREb_XFwa882atws","title":"No Sign Of Weakness","artist":"Burna Boy","year":"2025","type":"album","thumbnail":"…"}, …10],
+ "playlists":[{"id":"PLX0yRpY9uxn4wJWndOffj3zUvFTmnjooh","title":"Burna Boy - NO STRESS","author":"John Perea","itemCount":"","thumbnail":"…"}, …10]}
+```
+
+0.8 s, cached 30 min. Top result: an artist whose name matches the query, else a song whose title matches exactly ("essence" → Wizkid's *Essence*), else an album, else the first song.
+
+### S4 `GET /api/playlist?id=`
+
+```json
+{"id":"PLX0yRpY9uxn4wJWndOffj3zUvFTmnjooh","title":"Burna Boy - NO STRESS","author":"","description":"NO STRESS",
+ "subtitle":"332 views • 7 tracks • 26 minutes","thumbnail":"…=s1200","trackCount":6,
+ "tracks":[{"id":"c4Fyvg4T6pQ","title":"Burna Boy – NO STRESS (Official Music Video)","artist":"Les tubes français","duration":"4:52","durationSeconds":292,…}, …]}
+```
+
+0.5 s. Unknown id → `404 {"error":"Playlist not found: no playable tracks"}`.
+
+### S5 `?quality=low` on `/api/stream/:id` and `/api/download/:id`
+
+Optional. Picks `lowestaudio` instead of `highestaudio` (Settings → Data saver). Without it, behaviour is exactly as before.
