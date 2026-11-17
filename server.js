@@ -1,5 +1,6 @@
 import express from 'express';
 import { extractBestThumbnail } from './serverArtwork.js';
+import { registerHandoffRoutes } from './serverHandoff.js';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
@@ -97,7 +98,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 // Health check endpoint for desktop app and service monitoring
 app.get('/api/health', (req, res) => {
@@ -2087,6 +2088,9 @@ app.get('/api/rooms/:roomId/sync', (req, res) => {
     currentTrack: room.currentTrack
   });
 });
+
+// Tap / flick to transfer between phone and desktop (must be before the static catch-all)
+registerHandoffRoutes(app);
 
 // Serve static client bundle in production desktop app
 const clientDist = path.join(__dirname, 'dist');

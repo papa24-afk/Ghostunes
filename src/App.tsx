@@ -19,6 +19,19 @@ import { AboutModal } from './components/AboutModal';
 import { audioLab } from './services/audioLabEngine';
 import { musicMemory } from './services/musicMemoryService';
 import { listeningRooms } from './services/listeningRoomsService';
+import {
+  HandoffError,
+  buildHandoffSnapshot,
+  fadeOutAndPause,
+  getDesktopNowPlaying,
+  onHandoffTrigger,
+  pushToDesktop,
+  releaseDesktop,
+  reportHandoffStatus,
+  requestHandoff,
+  startDesktopHandoffListener
+} from './services/handoffService';
+import { isFlickHandoffEnabled, startFlickGesture, subscribeFlickSetting } from './services/gestureService';
 import { getNextRadioTrack } from './services/ghostDjEngine';
 import { generateAutoplayBatch } from './services/smartAutoplayService';
 import { fetchSmartRadio, logSmartRadioFeedback, prebufferTrackStream } from './services/smartRadioService';
@@ -826,6 +839,25 @@ export function App() {
   const currentTrackRef = useRef<Track | null>(null);
   currentTrackRef.current = currentTrack;
 
+  // Tap / flick to transfer: refs so the long-lived listeners never use stale closures.
+  const playTrackRef = useRef<(track: Track, newQueue?: Track[], startAt?: number, exactIndex?: number) => Promise<void>>(async () => {});
+  const handoffStateRef = useRef({ currentTrack, queue, queueIndex, currentTime });
+  handoffStateRef.current = { currentTrack, queue, queueIndex, currentTime };
+  /** Where to land once metadata loads: `position` was valid at local time `anchor` (ms). */
+  const handoffSeekRef = useRef<{ trackId: string; position: number; anchor: number } | null>(null);
+  /** Desktop: incoming handoff waiting for the audio 'playing' event. */
+  const incomingHandoffRef = useRef<{ id: string; trackId: string; deviceName: string; timer: any } | null>(null);
+  /** Phone: pull waiting for local playback to start before releasing the PC. */
+  const pullHandoffRef = useRef<{ trackId: string; timer: any } | null>(null);
+  const handoffBusyRef = useRef(false);
+  const [handoffToast, setHandoffToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const handoffToastTimerRef = useRef<any>(null);
+  const showHandoffToast = (message: string, tone: 'info' | 'success' | 'error' = 'info', ms = 3200) => {
+    if (handoffToastTimerRef.current) clearTimeout(handoffToastTimerRef.current);
+    setHandoffToast({ message, tone });
+    handoffToastTimerRef.current = setTimeout(() => setHandoffToast(null), ms);
+  };
+
   // Sync offline downloads in Desktop mode
   const refreshDownloadedTracks = async () => {
     if (isDesktopApp()) {
@@ -1573,6 +1605,7 @@ export function App() {
       fetchLyrics(track);
     }
   };
+  playTrackRef.current = playTrack;
 
   // Play/pause toggle
   const togglePlayPause = () => {
@@ -2031,6 +2064,147 @@ export function App() {
     };
   }, [isStandaloneMiniWidget, lyrics, volume, isMuted, favorites, isShuffle, isRepeat]);
 
+  // ---------------------------------------------------------------- Tap / flick to transfer
+  const finishIncomingHandoff = (status: 'playing' | 'failed', error?: string) => {
+    const incoming = incomingHandoffRef.current;
+    if (!incoming) return;
+    clearTimeout(incoming.timer);
+    incomingHandoffRef.current = null;
+    reportHandoffStatus(incoming.id, status, error);
+    if (status === 'playing') showHandoffToast(`Picked up from ${incoming.deviceName}`, 'success');
+  };
+
+  const finishPullHandoff = (ok: boolean) => {
+    const pull = pullHandoffRef.current;
+    if (!pull) return;
+    clearTimeout(pull.timer);
+    pullHandoffRef.current = null;
+    handoffBusyRef.current = false;
+    if (ok) {
+      releaseDesktop('pulled');
+      showHandoffToast('Moved to your phone', 'success');
+    } else {
+      showHandoffToast("Couldn't start playback on your phone.", 'error', 4500);
+    }
+  };
+
+  /** Called from the <audio> 'playing' event. */
+  const onHandoffAudioPlaying = () => {
+    const trackId = currentTrackRef.current?.id;
+    if (incomingHandoffRef.current?.trackId === trackId) finishIncomingHandoff('playing');
+    if (pullHandoffRef.current?.trackId === trackId) finishPullHandoff(true);
+  };
+
+  // A handoff that hits a playback error is reported as failed (the other device keeps playing).
+  useEffect(() => {
+    if (playbackStatus !== 'error') return;
+    if (incomingHandoffRef.current) finishIncomingHandoff('failed', playbackError || 'playback_error');
+    if (pullHandoffRef.current) finishPullHandoff(false);
+  }, [playbackStatus]);
+
+  // Desktop: receive handoffs from the phone and report what we're playing.
+  useEffect(() => {
+    if (!isDesktopApp() || isStandaloneMiniWidget) return;
+    return startDesktopHandoffListener({
+      getNowPlaying: () => {
+        const state = handoffStateRef.current;
+        const audio = audioRef.current;
+        if (!state.currentTrack) return null;
+        const hasSource = Boolean(audio && audio.src);
+        const playing = Boolean(hasSource && audio && !audio.paused);
+        const position = hasSource && audio ? audio.currentTime : state.currentTime;
+        return buildHandoffSnapshot(state.currentTrack, state.queue, state.queueIndex, position, playing);
+      },
+      onHandoff: ({ id, snapshot, stampedAt }) => {
+        if (incomingHandoffRef.current) finishIncomingHandoff('failed', 'superseded');
+        const timer = setTimeout(() => finishIncomingHandoff('failed', 'timeout'), 15000);
+        incomingHandoffRef.current = { id, trackId: snapshot.track.id, deviceName: snapshot.deviceName || 'your phone', timer };
+        // The server runs on this PC, so stampedAt is already on our clock.
+        handoffSeekRef.current = { trackId: snapshot.track.id, position: snapshot.position, anchor: stampedAt };
+        audioLab.resume();
+        // playTrack still checks getLocalTrack for an offline copy on this PC.
+        playTrackRef.current(snapshot.track, snapshot.queue, snapshot.position, snapshot.queueIndex).catch(err => {
+          finishIncomingHandoff('failed', String(err?.message || err));
+        });
+      },
+      onRelease: () => {
+        const audio = audioRef.current;
+        if (audio && !audio.paused) fadeOutAndPause(audio);
+      }
+    });
+  }, [isStandaloneMiniWidget]);
+
+  /** Phone: push to the PC if we're playing, otherwise pull from the PC. */
+  const runHandoff = async () => {
+    if (handoffBusyRef.current) return;
+    handoffBusyRef.current = true;
+    let waitingForPull = false;
+    try {
+      const state = handoffStateRef.current;
+      const audio = audioRef.current;
+      if (audio && audio.src && !audio.paused && state.currentTrack) {
+        showHandoffToast('Sending to your PC…', 'info', 20000);
+        const snapshot = buildHandoffSnapshot(state.currentTrack, state.queue, state.queueIndex, audio.currentTime, true);
+        // Resolves once the PC is actually playing; the phone keeps playing until then (no silent gap).
+        await pushToDesktop(snapshot);
+        await fadeOutAndPause(audio);
+        showHandoffToast('Now playing on your PC', 'success');
+        return;
+      }
+
+      const desktop = await getDesktopNowPlaying();
+      if (!desktop.online) {
+        showHandoffToast('Open Ghosttunes on your PC first.', 'error', 4500);
+        return;
+      }
+      const nowPlaying = desktop.nowPlaying;
+      if (!nowPlaying || !nowPlaying.isPlaying) {
+        showHandoffToast('Nothing is playing on your PC.', 'error', 4500);
+        return;
+      }
+      waitingForPull = true;
+      const timer = setTimeout(() => finishPullHandoff(false), 15000);
+      pullHandoffRef.current = { trackId: nowPlaying.track.id, timer };
+      // nowPlaying.position is valid at desktop.receivedAt on this phone's clock.
+      handoffSeekRef.current = { trackId: nowPlaying.track.id, position: nowPlaying.position, anchor: desktop.receivedAt };
+      audioLab.resume();
+      await playTrackRef.current(nowPlaying.track, nowPlaying.queue, nowPlaying.position, nowPlaying.queueIndex);
+    } catch (err) {
+      const code = err instanceof HandoffError ? err.code : 'unreachable';
+      showHandoffToast(
+        code === 'desktop_offline' ? 'Open Ghosttunes on your PC first.'
+          : code === 'timeout' ? "Your PC didn't start playing in time."
+          : code === 'desktop_failed' ? "Your PC couldn't play this song."
+          : "Can't reach your PC. Are you on the same Wi-Fi?",
+        'error',
+        4500
+      );
+      if (pullHandoffRef.current) {
+        clearTimeout(pullHandoffRef.current.timer);
+        pullHandoffRef.current = null;
+      }
+      waitingForPull = false;
+    } finally {
+      // A pull stays busy until the phone is playing (or it times out) — see finishPullHandoff.
+      if (!waitingForPull || !pullHandoffRef.current) handoffBusyRef.current = false;
+    }
+  };
+  const runHandoffRef = useRef(runHandoff);
+  runHandoffRef.current = runHandoff;
+
+  // Phone: NFC sticker, flick and button all arrive as the same debounced trigger.
+  useEffect(() => {
+    if (isDesktopApp() || isStandaloneMiniWidget) return;
+    return onHandoffTrigger(() => runHandoffRef.current());
+  }, [isStandaloneMiniWidget]);
+
+  const [isFlickEnabled, setIsFlickEnabled] = useState(isFlickHandoffEnabled);
+  useEffect(() => subscribeFlickSetting(setIsFlickEnabled), []);
+  useEffect(() => {
+    if (isDesktopApp() || isStandaloneMiniWidget || !isFlickEnabled) return;
+    return startFlickGesture(() => requestHandoff('flick'));
+  }, [isStandaloneMiniWidget, isFlickEnabled]);
+
   // Check if desktop mini widget is already open on launch
   useEffect(() => {
     if (isDesktopApp() && !isStandaloneMiniWidget) {
@@ -2155,6 +2329,7 @@ export function App() {
             onOpenAbout={() => setIsAboutModalOpen(true)}
             onOpenAppearanceModal={() => setIsAppearanceModalOpen(true)}
             onOpenAudioLab={() => setIsAudioLabOpen(true)}
+            onHandoff={isDesktopApp() ? undefined : () => requestHandoff('button')}
             currentView={currentView}
             onViewChange={(view) => setCurrentView(view)}
             searchQuery={searchQuery}
@@ -2506,6 +2681,21 @@ export function App() {
         onModeChange={(m) => setAutoplayMode(m as any)}
       />
 
+      {/* Tap / flick to transfer status pill */}
+      {handoffToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] pointer-events-none flex items-center gap-2 px-4 py-2.5 rounded-full bg-zinc-900/95 border border-zinc-700/80 shadow-2xl backdrop-blur-md text-white text-xs font-medium max-w-[90vw] text-center"
+          style={{ marginTop: 'env(safe-area-inset-top)' }}
+        >
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+            handoffToast.tone === 'success' ? 'bg-emerald-400' : handoffToast.tone === 'error' ? 'bg-rose-400' : 'bg-sky-400 animate-pulse'
+          }`} />
+          <span>{handoffToast.message}</span>
+        </div>
+      )}
+
       {/* Floating Toast Notification for Favorites Actions */}
       {favoriteToast && (
         <div 
@@ -2634,7 +2824,15 @@ export function App() {
         preload="auto"
         onLoadedMetadata={event => {
           const audio = event.currentTarget;
-          if (pendingResumeRef.current > 0) {
+          const handoffSeek = handoffSeekRef.current;
+          if (handoffSeek && handoffSeek.trackId === currentTrackRef.current?.id) {
+            // Land on the exact second: position + time since it was stamped + start-up latency.
+            handoffSeekRef.current = null;
+            const target = handoffSeek.position + (Date.now() - handoffSeek.anchor) / 1000 + 0.35;
+            const limit = Number.isFinite(audio.duration) ? Math.max(0, audio.duration - 0.5) : target;
+            audio.currentTime = Math.max(0, Math.min(target, limit));
+            pendingResumeRef.current = 0;
+          } else if (pendingResumeRef.current > 0) {
             const position = Math.min(pendingResumeRef.current, Number.isFinite(audio.duration) ? Math.max(0, audio.duration - 0.1) : pendingResumeRef.current);
             audio.currentTime = position;
             pendingResumeRef.current = 0;
@@ -2642,7 +2840,7 @@ export function App() {
         }}
         onLoadStart={() => { if (audioRef.current?.src) setPlaybackStatus('loading'); }}
         onWaiting={event => { setPlaybackStatus('buffering'); musicMemory.onPlaybackStateChange(false, event.currentTarget.currentTime); }}
-        onPlaying={event => { setPlaybackStatus('playing'); setPlaybackError(null); musicMemory.onPlaybackStateChange(true, event.currentTarget.currentTime); }}
+        onPlaying={event => { setPlaybackStatus('playing'); setPlaybackError(null); musicMemory.onPlaybackStateChange(true, event.currentTarget.currentTime); onHandoffAudioPlaying(); }}
         onTimeUpdate={(e) => {
           const t = e.currentTarget.currentTime;
           if (pendingResumeRef.current > 0 && e.currentTarget.readyState < 1) return;

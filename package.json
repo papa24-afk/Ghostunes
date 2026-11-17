@@ -13,7 +13,7 @@
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-sqlite test_desktop_engine.cjs && node --experimental-sqlite tests/desktop-experience.cjs && node tests/artwork.cjs",
+    "test": "node --experimental-sqlite test_desktop_engine.cjs && node --experimental-sqlite tests/desktop-experience.cjs && node tests/artwork.cjs && node tests/flick-gesture.cjs",
     "typecheck": "tsc --noEmit",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "client": "vite",
@@ -46,6 +46,7 @@
       "server.js",
       "serverPlaylistImport.js",
       "serverArtwork.js",
+      "serverHandoff.js",
       "node_modules/**/*",
       "serverSmartRadio.js"
     ],
@@ -58,6 +59,7 @@
       "server.js",
       "serverPlaylistImport.js",
       "serverArtwork.js",
+      "serverHandoff.js",
       "package.json",
       "serverSmartRadio.js"
     ],
