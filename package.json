@@ -47,6 +47,7 @@
       "serverPlaylistImport.js",
       "serverArtwork.js",
       "serverHandoff.js",
+      "serverMobile.js",
       "node_modules/**/*",
       "serverSmartRadio.js"
     ],
@@ -60,6 +61,7 @@
       "serverPlaylistImport.js",
       "serverArtwork.js",
       "serverHandoff.js",
+      "serverMobile.js",
       "package.json",
       "serverSmartRadio.js"
     ],

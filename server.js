@@ -1,6 +1,7 @@
 import express from 'express';
 import { extractBestThumbnail } from './serverArtwork.js';
 import { registerHandoffRoutes } from './serverHandoff.js';
+import { registerMobileRoutes, fillMissingDurations } from './serverMobile.js';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
@@ -493,7 +494,8 @@ app.get('/api/artist', async (req, res) => {
               album: item.album?.name || '',
               duration: item.duration?.text || '3:30',
               durationSeconds: item.duration?.seconds || 210,
-              thumbnail: songThumb
+              thumbnail: songThumb,
+              missingDuration: !item.duration?.seconds
             });
           }
         }
@@ -544,6 +546,7 @@ app.get('/api/artist', async (req, res) => {
         }
       }
 
+      await fillMissingDurations(innertube, topTracks.slice(0, 20));
       const responsePayload = {
         id: artistId || `artist_${Date.now()}`,
         name: artistName,
@@ -2091,6 +2094,8 @@ app.get('/api/rooms/:roomId/sync', (req, res) => {
 
 // Tap / flick to transfer between phone and desktop (must be before the static catch-all)
 registerHandoffRoutes(app);
+// Ghosttunes Mobile additions: stream prepare, typed search, playlist details
+registerMobileRoutes(app, { getInnertube, getYtdlTrackInfo, chooseFormat, ytdlClient });
 
 // Serve static client bundle in production desktop app
 const clientDist = path.join(__dirname, 'dist');
