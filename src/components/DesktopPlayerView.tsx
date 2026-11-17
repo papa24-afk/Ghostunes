@@ -1,3 +1,4 @@
+import { getApiUrl } from '../utils/api';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Track, LyricLine, Playlist, HistoryItem, AutoplayMode } from '../types';
 import { 
@@ -46,7 +47,7 @@ import {
   Info,
   Compass,
   Plus,
-  Settings, ArrowUp, ArrowDown
+  Settings, ArrowUp, ArrowDown, ArrowUpRight, AlertCircle
 } from 'lucide-react';
 import { DownloadsView } from './DownloadsView';
 import { MusicMemoryView } from './MusicMemoryView';
@@ -158,6 +159,8 @@ interface Props {
   onResumeSession?: (tracks: Track[], index: number, time: number) => void;
   selectedPlaylistId?: string | null;
   onSelectPlaylist?: (playlistId: string | null) => void;
+  isSmartRadio?: boolean;
+  onToggleSmartRadio?: () => void;
   isAutoplayEnabled?: boolean;
   onToggleAutoplay?: () => void;
   autoplayMode?: AutoplayMode;
@@ -260,6 +263,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
   onResumeSession,
   selectedPlaylistId,
   onSelectPlaylist,
+  isSmartRadio = true,
+  onToggleSmartRadio,
   isAutoplayEnabled = true,
   onToggleAutoplay,
   autoplayMode = 'balanced',
@@ -275,6 +280,28 @@ export const DesktopPlayerView: React.FC<Props> = ({
   onRetryPlayback
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [searchRecommended, setSearchRecommended] = useState<any[]>([]);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim().length < 2) {
+      setSearchSuggestions([]);
+      setSearchRecommended([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(getApiUrl(`/api/search/suggestions?q=${encodeURIComponent(searchQuery.trim())}`));
+        if (res.ok) {
+          const data = await res.json();
+          setSearchSuggestions(data.suggestions || []);
+          setSearchRecommended(data.recommended || []);
+        }
+      } catch (e) {}
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
   const [isStudioMenuOpen, setIsStudioMenuOpen] = useState(false);
@@ -357,13 +384,17 @@ export const DesktopPlayerView: React.FC<Props> = ({
     });
   };
 
-  const sidebarPlaylists = useMemo(() => {
-    return (playlists || []).map(p => ({
-      id: p.id,
-      name: p.title || (p as any).name || 'Custom Playlist',
-      cover_url: p.cover_url || (p as any).coverUrl || '',
-      tracks: p.tracks || []
-    }));
+    const sidebarPlaylists = useMemo(() => {
+    return (playlists || []).map(p => {
+      const firstTrack = p.tracks?.[0];
+      const autoCover = p.cover_url || p.thumbnail || (p as any).coverUrl || (p as any).playlistCover || firstTrack?.thumbnail || (firstTrack as any)?.local_artwork_url || '';
+      return {
+        id: p.id,
+        name: p.title || (p as any).name || 'Custom Playlist',
+        cover_url: autoCover,
+        tracks: p.tracks || []
+      };
+    });
   }, [playlists]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -1898,6 +1929,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
           onPlayTrack={onPlayTrack}
           onResumeSession={onResumeSession}
           onOpenArtist={onOpenArtist}
+
         />
       ) : currentView === 'artist' && artistQuery ? (
         <ArtistProfileView
@@ -1951,6 +1983,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
           onDownloadPlaylist={onDownloadPlaylist}
           onOpenPlaylistRescue={onOpenPlaylistRescue}
           onOpenArtist={onOpenArtist}
+          onNavigateView={onViewChange}
         />
       )}
         </div>
@@ -1959,11 +1992,22 @@ export const DesktopPlayerView: React.FC<Props> = ({
       {/* =========================================================================
           FIXED BOTTOM PLAYBACK BAR: Compact, Fixed Bar with Burgundy Accents
          ========================================================================= */}
-      {(playbackError || playbackStatus === 'loading' || playbackStatus === 'buffering') && <div role={playbackError ? 'alert' : 'status'} className="fixed bottom-[90px] left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl bg-[#1c151a] border border-rose-500/25 px-4 py-3 shadow-xl max-w-[90vw] text-xs">
-        {!playbackError && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
-        <span>{playbackError || (playbackStatus === 'loading' ? 'Loading song…' : 'Buffering…')}</span>
-        {playbackError && onRetryPlayback && <button onClick={onRetryPlayback} className="text-rose-300 whitespace-nowrap font-semibold">Try again</button>}
-      </div>}
+      {playbackError && (
+        <div role="alert" className="fixed bottom-[90px] left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl bg-[#1c151a]/95 backdrop-blur-md border border-rose-500/30 px-4 py-2.5 shadow-2xl max-w-[90vw] text-xs text-rose-200">
+          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>{playbackError}</span>
+          {onRetryPlayback && (
+            <button onClick={onRetryPlayback} className="text-white hover:underline whitespace-nowrap font-semibold ml-1 cursor-pointer">
+              Try again
+            </button>
+          )}
+        </div>
+      )}
+      {(playbackStatus === 'loading' || playbackStatus === 'buffering') && (
+        <div className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden z-50 pointer-events-none">
+          <div className="w-full h-full bg-gradient-to-r from-transparent via-[#e0536c] to-transparent animate-pulse" />
+        </div>
+      )}
       <footer className="relative z-40 w-full shrink-0 bg-[#09090b]/95 backdrop-blur-2xl border-t border-white/[0.08] px-6 sm:px-10 py-2.5 flex items-center justify-between gap-4 sm:gap-6 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] pointer-events-auto">
         <div className="w-full flex items-center justify-between gap-4 sm:gap-6">
           
@@ -2104,7 +2148,9 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   title={isPlaying ? 'Pause' : 'Play'}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
                 >
-                  {isPlaying ? (
+                  {playbackStatus === 'loading' || playbackStatus === 'buffering' ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-black" />
+                  ) : isPlaying ? (
                     <Pause className="w-4 h-4 fill-black text-black" />
                   ) : (
                     <Play className="w-4 h-4 fill-black text-black ml-0.5" />
@@ -2161,6 +2207,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   {isRepeat === 'one' ? 'Repeat: One' : isRepeat ? 'Repeat: All' : 'Repeat: Off'}
                 </span>
               </div>
+
+              
             </div>
 
             {/* Scrubber row with Timestamps & Burgundy Bar */}
@@ -2298,6 +2346,15 @@ export const DesktopPlayerView: React.FC<Props> = ({
         </div>
       </footer>
 
+      {/* Backdrop click outside to close queue */}
+      {isQueueOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 cursor-pointer"
+          onClick={() => setIsQueueOpen(false)}
+          aria-label="Close Queue"
+        />
+      )}
+
       {/* =========================================================================
           SLIDE-OVER QUEUE DRAWER (Real upcoming tracks with instant playback)
          ========================================================================= */}
@@ -2327,61 +2384,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Smart Autoplay Radio Controls */}
-        <div className="py-2.5 border-b border-white/10 select-none">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Radio className={`w-3.5 h-3.5 ${isAutoplayEnabled ? 'text-[#e0536c]' : 'text-zinc-500'}`} />
-              <div>
-                <span className="text-xs font-semibold text-zinc-200">Smart Autoplay Radio</span>
-                <p className="text-[10px] text-zinc-500">Auto-continue when queue ends</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onToggleAutoplay}
-              className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer p-0.5 ${
-                isAutoplayEnabled ? 'bg-[#9e2a40]' : 'bg-zinc-800'
-              }`}
-              title={isAutoplayEnabled ? "Autoplay is ON" : "Autoplay is OFF"}
-              aria-label="Toggle Smart Autoplay"
-            >
-              <span
-                className={`block w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
-                  isAutoplayEnabled ? 'translate-x-4' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Autoplay Mode Selector Pills */}
-          {isAutoplayEnabled && (
-            <div className="mt-2.5 grid grid-cols-4 gap-1 animate-in fade-in duration-200">
-              {(
-                [
-                  { id: 'similar', label: 'Similar' },
-                  { id: 'artist', label: 'Artist' },
-                  { id: 'discover', label: 'Discover' },
-                  { id: 'balanced', label: 'Balanced' }
-                ] as const
-              ).map(m => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => onChangeAutoplayMode?.(m.id)}
-                  className={`py-1 text-[10px] font-medium rounded-lg text-center transition-colors cursor-pointer ${
-                    autoplayMode === m.id
-                      ? 'bg-[#9e2a40]/30 text-[#e0536c] border border-[#9e2a40]/50'
-                      : 'text-zinc-400 bg-white/[0.03] hover:bg-white/[0.08] hover:text-white border border-transparent'
-                  }`}
-                  title={`Mode: ${m.label}`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        
 
         {/* Scrollable Song Queue List */}
         <div className="overflow-y-auto space-y-1.5 pr-1 py-3 flex-1 scrollbar-none">
@@ -2400,8 +2403,6 @@ export const DesktopPlayerView: React.FC<Props> = ({
                 className={`group flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 relative ${
                   isActive
                     ? 'border-l-[3.5px] border-[#e0536c] bg-white/[0.08] backdrop-blur-xl'
-                    : isRec
-                    ? 'border border-dashed border-[#9e2a40]/30 bg-[#9e2a40]/5 hover:bg-[#9e2a40]/15'
                     : 'border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.07] hover:border-white/10 opacity-70 hover:opacity-100'
                 }`}
               >
@@ -2433,11 +2434,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
                     >
                       {item.artist}
                     </p>
-                    {isRec && item.recommendationReason && (
-                      <span className="text-[9px] font-mono text-[#e0536c] bg-[#9e2a40]/20 px-1 py-0.2 rounded shrink-0">
-                        {item.recommendationReason}
-                      </span>
-                    )}
+                    
                   </div>
                 </div>
 
@@ -2466,6 +2463,38 @@ export const DesktopPlayerView: React.FC<Props> = ({
               </div>
             );
           })}
+        </div>
+
+        {/* Floating Bottom Actions Pill */}
+        <div className="pt-3 pb-1 flex items-center justify-between gap-2 border-t border-white/10 shrink-0">
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-zinc-900/90 border border-white/10 shadow-lg">
+            <button
+              type="button"
+              onClick={onToggleShuffle}
+              className={`p-2 rounded-xl transition-colors ${isShuffle ? 'text-[#f0a8b4] bg-[#9e2a40]/30' : 'text-zinc-400 hover:text-white hover:bg-white/10'}`}
+              title="Shuffle"
+            >
+              <Shuffle className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onToggleRepeat}
+              className={`p-2 rounded-xl transition-colors ${Boolean(isRepeat) ? 'text-[#f0a8b4] bg-[#9e2a40]/30' : 'text-zinc-400 hover:text-white hover:bg-white/10'}`}
+              title="Repeat"
+            >
+              {isRepeat === 'one' ? <Repeat1 className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
+            </button>
+          </div>
+          {/* Prominent Pink Collapse Button > */}
+          <button
+            type="button"
+            onClick={() => setIsQueueOpen(false)}
+            className="w-11 h-11 rounded-2xl bg-[#f0a8b4] text-zinc-950 flex items-center justify-center hover:opacity-90 active:scale-95 transition-all font-bold cursor-pointer shadow-lg shrink-0"
+            title="Collapse Queue"
+            aria-label="Collapse Queue"
+          >
+            <ChevronRight className="w-6 h-6 stroke-[2.5]" />
+          </button>
         </div>
       </div>
 

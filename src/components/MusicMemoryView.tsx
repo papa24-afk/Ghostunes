@@ -10,6 +10,7 @@ import { Track, ListeningHistoryRecord, ListeningStats } from '../types';
 import { getListeningHistory, getListeningStats, clearListeningHistory } from '../services/desktopService';
 import { musicMemory, downloadHistoryExport } from '../services/musicMemoryService';
 import { ArtistAvatar } from './ArtistAvatar';
+import { getApiUrl } from '../utils/api';
 
 interface MusicMemoryViewProps {
   onBack: () => void;
@@ -38,6 +39,32 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
   const [isActionsOpen, setIsActionsOpen] = useState<boolean>(false);
   const [isArtistSortOpen, setIsArtistSortOpen] = useState<boolean>(false);
   const [artistSort, setArtistSort] = useState<'plays' | 'time'>('plays');
+  const [dynamicArtistAvatars, setDynamicArtistAvatars] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!stats?.topArtists || stats.topArtists.length === 0) return;
+    const fetchMissingAvatars = async () => {
+      for (const a of stats.topArtists) {
+        const artName = (a.artist || '').trim();
+        const key = artName.toLowerCase();
+        if (!key || dynamicArtistAvatars.has(key)) continue;
+        try {
+          const res = await fetch(getApiUrl(`/api/artist-avatar?name=${encodeURIComponent(artName)}`));
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.avatar) {
+              setDynamicArtistAvatars(prev => {
+                const next = new Map(prev);
+                next.set(key, data.avatar);
+                return next;
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    };
+    fetchMissingAvatars();
+  }, [stats?.topArtists]);
   const [isTrackSortOpen, setIsTrackSortOpen] = useState<boolean>(false);
   const [trackSort, setTrackSort] = useState<'frequency' | 'recent'>('frequency');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week'>('all');
@@ -492,7 +519,7 @@ export const MusicMemoryView: React.FC<MusicMemoryViewProps> = ({
                   </div>
                 ) : (
                   sortedArtists.map((artist, idx) => {
-                    const avatar = artist.thumbnail || artistArtworkMap.get(artist.artist.toLowerCase().trim()) || '';
+                    const avatar = dynamicArtistAvatars.get(artist.artist.toLowerCase().trim()) || artist.thumbnail || artistArtworkMap.get(artist.artist.toLowerCase().trim()) || '';
                     return (
                       <div
                         key={`top-artist-${artist.artist}-${idx}`}

@@ -17,7 +17,8 @@ import {
   Sparkles,
   Download,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Radio
 } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
 import ghostIcon from '../assets/icon.png';
@@ -51,6 +52,8 @@ interface Props {
   isDownloaded?: boolean;
   isDownloading?: boolean;
   isPaused?: boolean;
+  isSmartRadio?: boolean;
+  onToggleSmartRadio?: () => void;
 }
 
 export const PlayerBar: React.FC<Props> = ({
@@ -80,7 +83,9 @@ export const PlayerBar: React.FC<Props> = ({
   onDownloadTrack,
   isDownloaded = false,
   isDownloading = false,
-  isPaused = false
+  isPaused = false,
+  isSmartRadio = true,
+  onToggleSmartRadio
 }) => {
   if (!currentTrack) return null;
 

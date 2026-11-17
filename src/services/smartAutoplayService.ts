@@ -22,7 +22,53 @@ export interface AutoplayBatchResult {
 const sessionRelatedCache = new Map<string, Track[]>();
 
 /**
- * Fetch candidate tracks related to a YouTube Music track ID
+ * Fetch candidate tracks directly from official Spotify-Style Smart Radio endpoint (/api/smart-radio)
+ * Powered by YouTube InnerTube Mix (RD + videoId) & SQLite History
+ */
+export async function fetchSmartRadioFromApi(
+  trackId: string,
+  title: string,
+  artist: string,
+  mode: AutoplayMode,
+  duration?: number
+): Promise<Track[]> {
+  const cacheKey = `${trackId}_${mode}`;
+  if (sessionRelatedCache.has(cacheKey)) {
+    return sessionRelatedCache.get(cacheKey)!;
+  }
+
+  try {
+    const qStr = `id=${encodeURIComponent(trackId)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&mode=${encodeURIComponent(mode)}&duration=${duration || 210}`;
+    const res = await fetch(getApiUrl(`/api/smart-radio?${qStr}`), {
+      signal: AbortSignal.timeout(7000)
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const tracks: Track[] = (data.tracks || []).map((t: any) => ({
+      id: String(t.id),
+      title: String(t.title || 'Unknown Title'),
+      artist: String(t.artist || 'Unknown Artist'),
+      artistId: t.artistId ? String(t.artistId) : undefined,
+      artist_thumbnail: t.artist_thumbnail ? String(t.artist_thumbnail) : undefined,
+      album: t.album ? String(t.album) : '',
+      duration: t.duration ? String(t.duration) : '3:30',
+      durationSeconds: Number(t.durationSeconds) || 210,
+      thumbnail: t.thumbnail || `https://i.ytimg.com/vi/${t.id}/hqdefault.jpg`,
+      source: t.source || 'youtube'
+    }));
+
+    if (tracks.length > 0) {
+      sessionRelatedCache.set(cacheKey, tracks);
+    }
+    return tracks;
+  } catch (err) {
+    console.warn('[SmartAutoplay] fetchSmartRadioFromApi error:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetch candidate tracks related to a YouTube Music track ID (fallback)
  */
 async function fetchRelatedFromApi(trackId: string): Promise<Track[]> {
   if (sessionRelatedCache.has(trackId)) {
@@ -39,6 +85,8 @@ async function fetchRelatedFromApi(trackId: string): Promise<Track[]> {
       id: String(t.id),
       title: String(t.title || 'Unknown Title'),
       artist: String(t.artist || 'Unknown Artist'),
+      artistId: t.artistId ? String(t.artistId) : undefined,
+      artist_thumbnail: t.artist_thumbnail ? String(t.artist_thumbnail) : undefined,
       album: t.album ? String(t.album) : '',
       duration: t.duration ? String(t.duration) : '3:30',
       durationSeconds: Number(t.durationSeconds) || 210,
@@ -68,6 +116,8 @@ async function fetchSearchFromApi(query: string): Promise<Track[]> {
       id: String(t.id),
       title: String(t.title || 'Unknown Title'),
       artist: String(t.artist || 'Unknown Artist'),
+      artistId: t.artistId ? String(t.artistId) : undefined,
+      artist_thumbnail: t.artist_thumbnail ? String(t.artist_thumbnail) : undefined,
       album: t.album ? String(t.album) : '',
       duration: t.duration ? String(t.duration) : '3:30',
       durationSeconds: Number(t.durationSeconds) || 210,
@@ -108,106 +158,53 @@ export async function generateAutoplayBatch({
   let candidatePool: Track[] = [];
   let defaultReason = `Similar to ${currentTrack.title}`;
 
-  // 1. Gather raw candidates based on mode
-  if (mode === 'artist') {
-    defaultReason = `More from ${currentTrack.artist}`;
+  // 1. Primary Recommendation Source: YouTube InnerTube Mix via /api/smart-radio
+  const smartRadioTracks = await fetchSmartRadioFromApi(
+    currentId,
+    currentTrack.title,
+    currentTrack.artist,
+    mode,
+    currentTrack.durationSeconds
+  );
 
-    // A. Search local library for same artist
-    const localArtistMatches = libraryTracks.filter(t => 
-      !excludedIds.has(t.id) &&
-      t.artist.toLowerCase().trim() === currentArtist
-    );
-    candidatePool.push(...localArtistMatches);
-
-    // B. Query search API for artist discography
-    if (candidatePool.length < batchSize) {
-      const apiArtistTracks = await fetchSearchFromApi(currentTrack.artist);
-      for (const t of apiArtistTracks) {
-        if (!excludedIds.has(t.id) && !candidatePool.some(c => c.id === t.id)) {
-          // Verify it genuinely matches the artist
-          if (t.artist.toLowerCase().includes(currentArtist) || currentArtist.includes(t.artist.toLowerCase())) {
-            candidatePool.push(t);
-          }
-        }
-      }
-    }
-  } else if (mode === 'discover') {
-    defaultReason = `New discovery based on ${currentTrack.title}`;
-
-    // Query related tracks from YouTube Music / InnerTube
-    const related = await fetchRelatedFromApi(currentId);
-    for (const t of related) {
-      if (!excludedIds.has(t.id)) {
-        // In discover mode, prefer tracks NOT by the same artist and NOT already in user's favorites
-        const isFav = userFavorites.some(f => f.id === t.id);
-        const isSameArtist = t.artist.toLowerCase().trim() === currentArtist;
-        if (!isFav && !isSameArtist) {
-          candidatePool.push(t);
-        }
-      }
+  if (smartRadioTracks.length > 0) {
+    if (mode === 'artist') {
+      defaultReason = `100% official tracks from ${currentTrack.artist}`;
+    } else if (mode === 'similar') {
+      defaultReason = `Similar artists related to ${currentTrack.artist}`;
+    } else {
+      defaultReason = `Curated 50/50 mix based on ${currentTrack.title}`;
     }
 
-    // Fallback if strict discovery yielded too few: allow related tracks by other artists
-    if (candidatePool.length < batchSize) {
-      for (const t of related) {
-        if (!excludedIds.has(t.id) && !candidatePool.some(c => c.id === t.id) && t.artist.toLowerCase().trim() !== currentArtist) {
-          candidatePool.push(t);
-        }
-      }
-    }
-  } else if (mode === 'similar') {
-    defaultReason = `Similar vibe to ${currentTrack.title}`;
-
-    // Query official Up Next / Related algorithm
-    const related = await fetchRelatedFromApi(currentId);
-    for (const t of related) {
+    for (const t of smartRadioTracks) {
       if (!excludedIds.has(t.id) && !candidatePool.some(c => c.id === t.id)) {
         candidatePool.push(t);
       }
     }
+  }
 
-    // Fallback to searching album or title if related API gave zero
-    if (candidatePool.length < batchSize) {
-      const searchTerms = currentTrack.album 
-        ? `${currentTrack.artist} ${currentTrack.album}`
-        : `${currentTrack.artist} ${currentTrack.title}`;
-      const searchResults = await fetchSearchFromApi(searchTerms);
-      for (const t of searchResults) {
+  // 2. Secondary fallback if Smart Radio returned empty (e.g. offline/network issue)
+  if (candidatePool.length < batchSize) {
+    if (mode === 'artist') {
+      // Local library matches for the same artist
+      const localArtistMatches = libraryTracks.filter(t => 
+        !excludedIds.has(t.id) &&
+        t.artist.toLowerCase().trim() === currentArtist
+      );
+      candidatePool.push(...localArtistMatches);
+    } else {
+      // Related tracks from official UpNext
+      const related = await fetchRelatedFromApi(currentId);
+      for (const t of related) {
         if (!excludedIds.has(t.id) && !candidatePool.some(c => c.id === t.id)) {
+          if (mode === 'similar' && t.artist.toLowerCase().trim() === currentArtist) continue;
           candidatePool.push(t);
         }
       }
     }
-  } else {
-    // 'balanced' mode: blend of similar, familiar favorites, and artist affinity
-    defaultReason = `Curated radio based on ${currentTrack.title}`;
-
-    // A. Start with related tracks
-    const related = await fetchRelatedFromApi(currentId);
-    const relatedFiltered = related.filter(t => !excludedIds.has(t.id));
-
-    // B. Check user favorites and library for tasteful blend
-    const libraryMatches = [...userFavorites, ...libraryTracks].filter(t => 
-      !excludedIds.has(t.id) && 
-      (t.artist.toLowerCase().trim() === currentArtist || Math.abs((t.durationSeconds || 210) - (currentTrack.durationSeconds || 210)) < 45)
-    );
-
-    // Blend: 2 related, 1 library/favorite match, then more related
-    let relIdx = 0;
-    let libIdx = 0;
-    while (candidatePool.length < batchSize * 2 && (relIdx < relatedFiltered.length || libIdx < libraryMatches.length)) {
-      if (relIdx < relatedFiltered.length) {
-        const t = relatedFiltered[relIdx++];
-        if (!candidatePool.some(c => c.id === t.id)) candidatePool.push(t);
-      }
-      if (libIdx < libraryMatches.length && candidatePool.length < batchSize * 2) {
-        const t = libraryMatches[libIdx++];
-        if (!candidatePool.some(c => c.id === t.id)) candidatePool.push(t);
-      }
-    }
   }
 
-  // 2. Offline / Local Fallback if API returned nothing
+  // 3. Offline / Local Fallback if API returned nothing
   if (candidatePool.length === 0) {
     const offlinePool = [...libraryTracks, ...userFavorites].filter(t => !excludedIds.has(t.id));
     if (offlinePool.length > 0) {

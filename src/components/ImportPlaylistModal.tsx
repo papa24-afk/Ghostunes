@@ -381,7 +381,8 @@ export const ImportPlaylistModal: React.FC<Props> = ({
       sourceUrl: resolvedPlaylist.sourceUrl,
       sourceId: resolvedPlaylist.id,
       sourceAuthor: resolvedPlaylist.author,
-      thumbnail: resolvedPlaylist.thumbnail || validTracks[0]?.thumbnail,
+      thumbnail: resolvedPlaylist.thumbnail || (resolvedPlaylist as any).cover_url || validTracks[0]?.thumbnail,
+      cover_url: resolvedPlaylist.thumbnail || (resolvedPlaylist as any).cover_url || validTracks[0]?.thumbnail,
       unmatchedTracks: unmatchedList
     };
 

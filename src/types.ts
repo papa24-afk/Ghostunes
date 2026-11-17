@@ -8,6 +8,8 @@ export interface Track {
   duration: string;
   durationSeconds?: number;
   thumbnail: string;
+  artistId?: string;
+  artist_thumbnail?: string;
   isOfflinePlayable?: boolean;
   local_audio_url?: string;
   local_artwork_url?: string;
@@ -24,6 +26,8 @@ export interface DownloadRecord {
   title: string;
   artist: string;
   thumbnail: string;
+  artistId?: string;
+  artist_thumbnail?: string;
   source_url?: string;
   status: 'queued' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'unsupported';
   progress: number;
@@ -71,6 +75,8 @@ export interface ArtistRelease {
   title: string;
   year?: string;
   thumbnail: string;
+  artistId?: string;
+  artist_thumbnail?: string;
 }
 
 export interface RelatedArtist {
@@ -98,6 +104,8 @@ export interface AlbumDetails {
   artist: string;
   year?: string;
   thumbnail: string;
+  artistId?: string;
+  artist_thumbnail?: string;
   description?: string;
   trackCount?: number;
   durationText?: string;

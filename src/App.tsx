@@ -21,6 +21,8 @@ import { musicMemory } from './services/musicMemoryService';
 import { listeningRooms } from './services/listeningRoomsService';
 import { getNextRadioTrack } from './services/ghostDjEngine';
 import { generateAutoplayBatch } from './services/smartAutoplayService';
+import { fetchSmartRadio, logSmartRadioFeedback, prebufferTrackStream } from './services/smartRadioService';
+import { SmartRadioDiagnosticModal } from './components/SmartRadioDiagnosticModal';
 import { 
   WALLPAPER_PRESETS, 
   saveCustomWallpaper, 
@@ -305,6 +307,38 @@ export function App() {
       return true;
     }
   });
+
+  // Spotify-Style Smart Radio State & Diagnostic Console
+  const [isSmartRadioEnabled, setIsSmartRadioEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ghosttunes_smart_radio') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const [isDiagnosticConsoleOpen, setIsDiagnosticConsoleOpen] = useState(false);
+  const prebufferedTrackIdRef = useRef<string | null>(null);
+  const isFetchingSmartRadioRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ghosttunes_smart_radio', String(isSmartRadioEnabled));
+    } catch (e) {
+      console.warn('Failed to save smart radio state', e);
+    }
+  }, [isSmartRadioEnabled]);
+
+  // Hidden Diagnostic Console Keyboard Shortcut (Ctrl+Shift+D / Cmd+Shift+D)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        setIsDiagnosticConsoleOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   const [autoplayMode, setAutoplayMode] = useState<AutoplayMode>(() => {
     try {
@@ -1282,6 +1316,14 @@ export function App() {
   const handleNext = async () => {
     if (queue.length === 0) return;
 
+    // Smart Radio: Track skips (< 80% played) for SQLite penalty
+    if (currentTrack && currentTime > 0) {
+      const dur = duration || 210;
+      if (currentTime < dur * 0.8) {
+        logSmartRadioFeedback(currentTrack.id, currentTrack.title, currentTrack.artist, 'skip', currentTime, dur);
+      }
+    }
+
     if (isRepeat === 'one') {
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
@@ -1335,6 +1377,7 @@ export function App() {
 
   // Queue track removal handler
   const handleRemoveFromQueue = (trackId: string, index: number) => {
+    logSmartRadioFeedback(trackId, '', '', 'skip', 0, 0);
     autoplayRejectedIdsRef.current.add(trackId);
     const nextQueue = queue.filter((_, itemIndex) => itemIndex !== index);
     if (index === queueIndex && nextQueue.length) {
@@ -1374,6 +1417,11 @@ export function App() {
   // Prev track
   const handlePrev = () => {
     if (queue.length === 0) return;
+
+    // Smart Radio: Track replays for SQLite affinity boost
+    if (currentTrack) {
+      logSmartRadioFeedback(currentTrack.id, currentTrack.title, currentTrack.artist, 'replay', currentTime, duration || 210);
+    }
     if (currentTime > 3) {
       handleSeek(0);
       return;
@@ -1397,6 +1445,7 @@ export function App() {
     setPlaybackError(null);
     currentTrackRef.current = track;
     setCurrentTrack(track);
+    prebufferedTrackIdRef.current = null;
     musicMemory.onTrackChange(track, track.durationSeconds || 210);
     sessionPlayedIdsRef.current.add(track.id);
     const nextQueue = newQueue || (queue.some(item => item.id === track.id) ? queue : [...queue, track]);
@@ -1405,6 +1454,44 @@ export function App() {
     setQueueIndex(nextIndex);
     pendingResumeRef.current = startAt;
     musicMemory.saveSessionSnapshot(nextQueue, nextIndex, startAt);
+
+    // Smart Radio Queue: when playing a song from search or radio, immediately populate queue with RDAMVM similar mix!
+    if (autoplayRef.current && nextQueue.length <= 1) {
+      (async () => {
+        try {
+          const radioRes = await fetch(getApiUrl(`/api/smart-radio?id=${encodeURIComponent(track.id)}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&mode=similar`));
+          if (radioRes.ok) {
+            const radioData = await radioRes.json();
+            const radioTracks: Track[] = (radioData.tracks || []).map((t: any) => ({
+              id: String(t.id),
+              title: String(t.title || 'Unknown Title'),
+              artist: String(t.artist || 'Unknown Artist'),
+              artistId: t.artistId ? String(t.artistId) : undefined,
+              artist_thumbnail: t.artist_thumbnail ? String(t.artist_thumbnail) : undefined,
+              album: t.album ? String(t.album) : '',
+              duration: t.duration ? String(t.duration) : '3:30',
+              durationSeconds: Number(t.durationSeconds) || 210,
+              thumbnail: t.thumbnail || `https://i.ytimg.com/vi/${t.id}/hqdefault.jpg`,
+              source: t.source || 'youtube',
+              isAutoplay: true
+            }));
+
+            if (radioTracks.length > 0 && playRequestRef.current === request) {
+              setQueue(prev => {
+                if (prev.length <= 1 || prev[0]?.id === track.id) {
+                  const existingIds = new Set([track.id]);
+                  const unique = radioTracks.filter(t => !existingIds.has(t.id));
+                  return [track, ...unique];
+                }
+                return prev;
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[SmartRadio] Auto radio generation notice:', err);
+        }
+      })();
+    }
 
     setCurrentTime(startAt);
     setDuration(track.durationSeconds || 210);
@@ -2093,6 +2180,8 @@ export function App() {
             downloadedTrackIds={downloadedTrackIds}
             downloadingTrackIds={activeDownloadingTrackIds}
             hasUpdate={appUpdate?.status === 'available' || appUpdate?.status === 'downloaded'}
+            isSmartRadio={isSmartRadioEnabled}
+            onToggleSmartRadio={() => setIsSmartRadioEnabled(prev => !prev)}
           />
         ) : (
           <DesktopPlayerView
@@ -2191,6 +2280,8 @@ export function App() {
             onOpenPlaylistRescue={(p) => { setRescueTargetPlaylist(p); setIsPlaylistRescueOpen(true); }}
             selectedPlaylistId={selectedPlaylistId}
             onSelectPlaylist={setSelectedPlaylistId}
+            isSmartRadio={isSmartRadioEnabled}
+            onToggleSmartRadio={() => setIsSmartRadioEnabled(prev => !prev)}
             isAutoplayEnabled={autoplay}
             onToggleAutoplay={() => setAutoplay(prev => !prev)}
             autoplayMode={autoplayMode}
@@ -2405,6 +2496,16 @@ export function App() {
         onClose={() => setIsAboutModalOpen(false)}
       />
 
+      {/* 15. Hidden Smart Radio Diagnostic Console (Ctrl+Shift+D) */}
+      <SmartRadioDiagnosticModal
+        isOpen={isDiagnosticConsoleOpen}
+        onClose={() => setIsDiagnosticConsoleOpen(false)}
+        currentTrackId={currentTrack?.id}
+        currentArtist={currentTrack?.artist}
+        activeMode={autoplayMode}
+        onModeChange={(m) => setAutoplayMode(m as any)}
+      />
+
       {/* Floating Toast Notification for Favorites Actions */}
       {favoriteToast && (
         <div 
@@ -2547,7 +2648,38 @@ export function App() {
           if (pendingResumeRef.current > 0 && e.currentTarget.readyState < 1) return;
           if (typeof t === 'number' && !isNaN(t)) {
             setCurrentTime(t);
-            musicMemory.onTimeUpdate(t, e.currentTarget.duration || duration);
+            const dur = e.currentTarget.duration || duration;
+            musicMemory.onTimeUpdate(t, dur);
+
+            // Spotify-Style Smart Radio: Pre-buffer next track at 15s left & seamlessly append to queue
+            if (isSmartRadioEnabled && dur > 15 && (dur - t) <= 15 && (dur - t) > 0 && currentTrack?.id) {
+              if (prebufferedTrackIdRef.current !== currentTrack.id && !isFetchingSmartRadioRef.current) {
+                prebufferedTrackIdRef.current = currentTrack.id;
+                isFetchingSmartRadioRef.current = true;
+                fetchSmartRadio(currentTrack.id, {
+                  seedTitle: currentTrack.title,
+                  seedArtist: currentTrack.artist,
+                  seedDuration: dur,
+                  mode: autoplayMode
+                }).then(response => {
+                  if (response?.tracks?.length) {
+                    const topTrack = response.tracks[0];
+                    if (topTrack?.id) {
+                      prebufferTrackStream(topTrack.id);
+                      setQueue(prev => {
+                        const upcoming = prev.slice(queueIndex + 1);
+                        if (upcoming.some(item => item.id === topTrack.id)) return prev;
+                        return [...prev, topTrack];
+                      });
+                    }
+                  }
+                }).catch(err => {
+                  console.warn('[SmartRadio] Pre-buffer error:', err);
+                }).finally(() => {
+                  isFetchingSmartRadioRef.current = false;
+                });
+              }
+            }
           }
         }}
         onSeeked={(e) => {
@@ -2574,6 +2706,11 @@ export function App() {
           musicMemory.saveSessionSnapshot(snapshot.queue, snapshot.queueIndex, pendingResumeRef.current || e.currentTarget.currentTime);
         }}
         onEnded={() => {
+          // Smart Radio: Track completion in SQLite for positive weight
+          if (currentTrackRef.current) {
+            const dur = duration || 210;
+            logSmartRadioFeedback(currentTrackRef.current.id, currentTrackRef.current.title, currentTrackRef.current.artist, 'complete', dur, dur);
+          }
           // Ghost Radio auto-continuation
           if (isRadioActive && currentTrackRef.current) {
             const pool = [...favorites, ...playlists.flatMap(p => p.tracks)];

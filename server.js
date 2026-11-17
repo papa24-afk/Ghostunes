@@ -10,6 +10,12 @@ import { Platform, Innertube, UniversalCache } from 'youtubei.js';
 import { Ytdl, chooseFormat } from '@distube/ytdl-core';
 const ytdlClient = new Ytdl({ clients: ['web_embedded', 'mweb', 'tv', 'web_creator', 'visionos'] });
 import {
+  get_smart_radio,
+  record_user_interaction,
+  get_latest_diagnostics,
+  fetchArtistAvatar
+} from './serverSmartRadio.js';
+import {
   parsePlaylistUrl,
   resolveSpotifyPlaylist,
   resolveYouTubePlaylist,
@@ -266,6 +272,115 @@ app.get('/api/related', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// 2b-2. Spotify-Style Smart Radio Engine with Vector Proximity & SQLite History
+app.get('/api/smart-radio', async (req, res) => {
+  const videoId = req.query.id || req.query.video_id;
+  if (!videoId) return res.status(400).json({ error: 'Video ID required for smart radio' });
+
+  try {
+    const mode = (req.query.mode || 'balanced').toLowerCase();
+    const data = await get_smart_radio(videoId, getInnertube, {
+      seedTitle: req.query.title,
+      seedArtist: req.query.artist,
+      seedDuration: Number(req.query.duration) || 210,
+      mode
+    });
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=120');
+    return res.json(data);
+  } catch (error) {
+    console.error('[Smart Radio Error]', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/smart-radio/feedback', (req, res) => {
+  const { track_id, title, artist, action, duration_played, total_duration } = req.body || {};
+  if (!track_id || !action) {
+    return res.status(400).json({ error: 'track_id and action are required' });
+  }
+  const result = record_user_interaction({
+    track_id,
+    title,
+    artist,
+    action,
+    duration_played: Number(duration_played) || 0,
+    total_duration: Number(total_duration) || 0
+  });
+  return res.json(result);
+});
+
+app.get('/api/smart-radio/diagnostics', (req, res) => {
+  return res.json(get_latest_diagnostics());
+});
+
+// 2b-3. Real Artist Avatar Endpoint (Google CDN =w544-h544-p-l90-rj)
+app.get('/api/artist-avatar', async (req, res) => {
+  const { name, id } = req.query;
+  if (!name && !id) return res.status(400).json({ error: 'Name or ID required' });
+  try {
+    const avatar = await fetchArtistAvatar(id ? String(id) : '', name ? String(name) : '');
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=86400');
+    return res.json({ avatar: avatar || null });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 2b-4. Search Suggestions & Recommended Cards (InnerTube API)
+app.get('/api/search/suggestions', async (req, res) => {
+  const query = (req.query.q || '').trim();
+  if (!query) return res.json({ suggestions: [], recommended: [] });
+
+  try {
+    const innertube = await getInnertube();
+    const results = await innertube.music.getSearchSuggestions(query);
+
+    const suggestions = [];
+    const firstSection = results[0]?.contents || [];
+    for (const item of firstSection) {
+      const text = item.suggestion?.text || item.text?.text || item.title?.text || item.query || '';
+      if (text && !suggestions.includes(text)) suggestions.push(text);
+    }
+
+    const recommended = [];
+    const secondSection = results[1]?.contents || [];
+    for (const recItem of secondSection) {
+      const title = recItem.title?.text || recItem.title || '';
+      const artist = recItem.artists?.[0]?.name || recItem.author?.name || '';
+      const vId = recItem.id || recItem.videoId || recItem.endpoint?.payload?.videoId || '';
+      const bId = recItem.endpoint?.payload?.browseId || recItem.artists?.[0]?.id || '';
+      const isArtist = recItem.endpoint?.payload?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType === 'MUSIC_PAGE_TYPE_ARTIST' ||
+                       recItem.subtitle?.text?.toLowerCase().includes('artist') ||
+                       (!vId && bId.startsWith('UC'));
+
+      let rawThumb = recItem.thumbnail?.thumbnails?.slice(-1)[0]?.url || (vId ? `https://i.ytimg.com/vi/${vId}/hq720.jpg` : '');
+      if (rawThumb && (rawThumb.includes('googleusercontent.com') || rawThumb.includes('ggpht.com'))) {
+        rawThumb = rawThumb.replace(/=w\d+-h\d+.*$/, '=w544-h544-p-l90-rj');
+      }
+
+      if (title) {
+        recommended.push({
+          id: vId || bId || `rec_${Date.now()}`,
+          videoId: vId,
+          browseId: bId,
+          title,
+          artist,
+          type: isArtist ? 'artist' : 'track',
+          subtitle: isArtist ? 'Artist' : (recItem.subtitle?.text || `Track • ${artist}`),
+          thumbnail: rawThumb
+        });
+      }
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=120');
+    return res.json({ suggestions: suggestions.slice(0, 6), recommended: recommended.slice(0, 3) });
+  } catch (err) {
+    console.warn('[Server] Suggestions error:', err.message);
+    return res.json({ suggestions: [], recommended: [] });
+  }
+});
+
 
 // 2c. Genre / Mood search
 app.get('/api/genre', async (req, res) => {
@@ -1986,5 +2101,5 @@ if (fs.existsSync(clientDist)) {
 }
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Metrolist Web API listening on http://127.0.0.1:${PORT}`);
+  console.log(`Ghosttunes API listening on http://127.0.0.1:${PORT}`);
 });

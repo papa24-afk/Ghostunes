@@ -1,7 +1,7 @@
 {
   "name": "metrolist-web",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.9",
   "description": "Ghosttunes — Premium Music Player for Windows & macOS",
   "author": "D!g!†@L G#0$†",
   "contributors": [
@@ -46,7 +46,8 @@
       "server.js",
       "serverPlaylistImport.js",
       "serverArtwork.js",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "serverSmartRadio.js"
     ],
     "directories": {
       "output": "release"
@@ -57,7 +58,8 @@
       "server.js",
       "serverPlaylistImport.js",
       "serverArtwork.js",
-      "package.json"
+      "package.json",
+      "serverSmartRadio.js"
     ],
     "win": {
       "target": [

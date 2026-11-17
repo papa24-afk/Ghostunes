@@ -28,7 +28,8 @@ import {
   MoreVertical,
   Volume2,
   Share2,
-  WifiOff
+  WifiOff,
+  Radio
 } from 'lucide-react';
 import { getOptimizedArtwork, getThumbnailArtwork } from '../utils/artwork';
 import ghostIcon from '../assets/icon.png';
@@ -63,6 +64,8 @@ export interface MobilePlayerViewProps {
   onOpenAbout?: () => void;
   onOpenAppearanceModal?: () => void;
   onOpenAudioLab?: () => void;
+  isSmartRadio?: boolean;
+  onToggleSmartRadio?: () => void;
   currentView: 'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist';
   onViewChange: (view: 'home' | 'now-playing' | 'explore' | 'library' | 'favorites' | 'downloads' | 'memory' | 'artist') => void;
   searchQuery: string;
@@ -120,6 +123,8 @@ export const MobilePlayerView: React.FC<MobilePlayerViewProps> = ({
   onOpenLyrics,
   onOpenAbout,
   onOpenAudioLab,
+  isSmartRadio = true,
+  onToggleSmartRadio,
   searchQuery,
   onSearchChange,
   selectedGenre,
@@ -917,6 +922,8 @@ export const MobilePlayerView: React.FC<MobilePlayerViewProps> = ({
                   <span>Equalizer</span>
                 </button>
               )}
+
+              
 
               {onDownloadTrack && (
                 <button
