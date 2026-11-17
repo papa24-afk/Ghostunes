@@ -68,8 +68,8 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const appVersion = updateState.currentVersion || '1.0.0';
-  const developerName = 'D!g!†@L G#0$†';
+  const appVersion = updateState.currentVersion || '1.1.0';
+  const developerName = 'Ghosttunes Studio';
   const whatsappUrl = 'https://wa.me/kobb.y298';
   const githubRepoUrl = 'https://github.com/papa24-afk/Ghostunes';
   const releasesUrl = 'https://github.com/papa24-afk/Ghostunes/releases';

@@ -520,7 +520,7 @@ export const CinematicLyricsView: React.FC<Props> = ({
                   e.stopPropagation();
                   onPrev();
                 }}
-                className="absolute -left-2 sm:-left-3 lg:-left-5 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#141518]/90 hover:bg-[#1a1b20] border border-white/10 text-white flex items-center justify-center backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-xl hover:scale-105"
+                className="hidden md:flex absolute -left-2 sm:-left-3 lg:-left-5 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#141518]/90 hover:bg-[#1a1b20] border border-white/10 text-white items-center justify-center backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-xl hover:scale-105"
                 title="Previous track"
                 aria-label="Previous track"
               >
@@ -535,7 +535,7 @@ export const CinematicLyricsView: React.FC<Props> = ({
                   e.stopPropagation();
                   onNext();
                 }}
-                className="absolute -right-2 sm:-right-3 lg:-right-5 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#141518]/90 hover:bg-[#1a1b20] border border-white/10 text-white flex items-center justify-center backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-xl hover:scale-105"
+                className="hidden md:flex absolute -right-2 sm:-right-3 lg:-right-5 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#141518]/90 hover:bg-[#1a1b20] border border-white/10 text-white items-center justify-center backdrop-blur-md cursor-pointer transition-all active:scale-95 shadow-xl hover:scale-105"
                 title="Next track"
                 aria-label="Next track"
               >
@@ -549,7 +549,7 @@ export const CinematicLyricsView: React.FC<Props> = ({
                 e.stopPropagation();
                 onPrev?.();
               }}
-              className="absolute left-1 sm:left-3 lg:left-5 z-[1] w-48 sm:w-56 lg:w-68 h-[240px] sm:h-[280px] lg:h-[330px] rounded-2xl overflow-hidden bg-[#121316] border border-white/10 shadow-2xl opacity-35 hover:opacity-60 transition-all duration-300 cursor-pointer scale-[0.84] -rotate-6"
+              className="hidden md:block absolute left-1 sm:left-3 lg:left-5 z-[1] w-48 sm:w-56 lg:w-68 h-[240px] sm:h-[280px] lg:h-[330px] rounded-2xl overflow-hidden bg-[#121316] border border-white/10 shadow-2xl opacity-35 hover:opacity-60 transition-all duration-300 cursor-pointer scale-[0.84] -rotate-6"
               title={prevTrack ? `Previous: ${prevTrack.title}` : 'Previous track'}
             >
               <img 
@@ -566,7 +566,7 @@ export const CinematicLyricsView: React.FC<Props> = ({
                 e.stopPropagation();
                 onNext?.();
               }}
-              className="absolute right-1 sm:right-3 lg:right-5 z-[1] w-48 sm:w-56 lg:w-68 h-[240px] sm:h-[280px] lg:h-[330px] rounded-2xl overflow-hidden bg-[#121316] border border-white/10 shadow-2xl opacity-35 hover:opacity-60 transition-all duration-300 cursor-pointer scale-[0.84] rotate-6"
+              className="hidden md:block absolute right-1 sm:right-3 lg:right-5 z-[1] w-48 sm:w-56 lg:w-68 h-[240px] sm:h-[280px] lg:h-[330px] rounded-2xl overflow-hidden bg-[#121316] border border-white/10 shadow-2xl opacity-35 hover:opacity-60 transition-all duration-300 cursor-pointer scale-[0.84] rotate-6"
               title={nextTrack ? `Next: ${nextTrack.title}` : 'Next track'}
             >
               <img 
@@ -933,7 +933,7 @@ export const CinematicLyricsView: React.FC<Props> = ({
               </button>
 
               {onToggleMute && onVolumeChange && (
-                <div className="flex items-center gap-2">
+                <div className="hidden md:flex items-center gap-2">
                   <button
                     onClick={onToggleMute}
                     className="text-zinc-400 hover:text-white transition-colors cursor-pointer"

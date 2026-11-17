@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { Readable } from 'stream';
 import { Platform, Innertube, UniversalCache } from 'youtubei.js';
 import { Ytdl, chooseFormat } from '@distube/ytdl-core';
-const ytdlClient = new Ytdl({ clients: ['web_embedded', 'mweb', 'tv', 'web_creator', 'visionos'] });
+const ytdlClient = new Ytdl();
 import {
   get_smart_radio,
   record_user_interaction,
@@ -664,7 +664,19 @@ async function getYtdlTrackInfo(videoId) {
   if (cached && cached.expiresAt > Date.now()) {
     return cached.info;
   }
-  const info = await ytdlClient.getInfo(videoId);
+  let info;
+  try {
+    info = await ytdlClient.getInfo(videoId);
+  } catch (primaryErr) {
+    console.warn(`[Stream API] Primary YTDL info failed for ${videoId}: ${primaryErr.message}. Trying mobile web fallback...`);
+    try {
+      const fallbackClient = new Ytdl({ clients: ['mweb', 'web_embedded'] });
+      info = await fallbackClient.getInfo(videoId);
+    } catch (fallbackErr) {
+      console.warn(`[Stream API] Fallback client failed for ${videoId}: ${fallbackErr.message}`);
+      throw primaryErr;
+    }
+  }
   ytdlInfoCache.set(videoId, {
     info,
     expiresAt: Date.now() + 2 * 3600 * 1000 // 2 hours

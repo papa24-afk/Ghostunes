@@ -609,7 +609,7 @@ export const exportListeningData = async (): Promise<any> => {
   return {
     version: '1.0.0',
     exportedAt: new Date().toISOString(),
-    developerCredits: 'D!g!†@L G#0$†',
+    developerCredits: 'Ghosttunes Studio',
     stats,
     history
   };

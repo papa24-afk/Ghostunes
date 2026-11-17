@@ -1560,8 +1560,34 @@ export function App() {
 
       audioRef.current.play().then(() => {
         if (request === playRequestRef.current) setIsPlaying(true);
-      }).catch(err => {
+      }).catch(async (err) => {
         if (request !== playRequestRef.current || err.name === 'AbortError') return;
+
+        // Resilient mobile stream fallback: if local endpoint failed (e.g. standalone mobile APK), try high-res stream fallback
+        if (!isLocal && audioRef.current) {
+          const fallbackCandidates = [
+            `https://invidious.nerdvpn.de/latest_version?id=${encodeURIComponent(track.id)}&itag=140`,
+            `https://inv.nadeko.net/latest_version?id=${encodeURIComponent(track.id)}&itag=140`,
+            `https://yewtu.be/latest_version?id=${encodeURIComponent(track.id)}&itag=140`
+          ];
+          for (const fallbackUrl of fallbackCandidates) {
+            try {
+              if (request !== playRequestRef.current) return;
+              audioRef.current.src = fallbackUrl;
+              audioRef.current.currentTime = 0;
+              await audioRef.current.play();
+              if (request === playRequestRef.current) {
+                setIsPlaying(true);
+                setPlaybackStatus('playing');
+                setPlaybackError(null);
+                return;
+              }
+            } catch (fallbackErr) {
+              console.warn('[PlaybackFallback] Candidate error, trying next:', fallbackUrl, fallbackErr);
+            }
+          }
+        }
+
         setIsPlaying(false);
         setPlaybackStatus('error');
         setPlaybackError(err.name === 'NotAllowedError' ? 'Press Play to allow audio playback.' : 'Unable to play this song. Try again or choose another song.');
@@ -2078,7 +2104,7 @@ export function App() {
     <div className="w-full h-full min-h-screen bg-black text-white select-none relative overflow-hidden font-sans">
       {/* 1. DEDICATED FULL-SCREEN BACKGROUND LAYER SYSTEM (Behind all UI elements) */}
       <div 
-        id="metrolist-background-system" 
+        id="ghosttunes-background-system" 
         className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none bg-black"
       >
         {/* Dark Ambient Base */}
@@ -2102,7 +2128,7 @@ export function App() {
         {/* Current Active Background Layer (Now Playing Artwork or Custom Image) */}
         {currentBgUrl && (
           <div 
-            id="metrolist-wallpaper-image"
+            id="ghosttunes-wallpaper-image"
             className="absolute inset-0 bg-cover bg-center transition-all duration-700 ease-out scale-110 filter blur-[55px] brightness-[0.28]"
             style={{
               backgroundImage: `url("${currentBgUrl}")`,

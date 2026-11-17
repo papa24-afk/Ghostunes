@@ -74,6 +74,13 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_artist_avatars_name ON artist_avatars(artist_name);
 `);
 
+// Migration safeguard for existing user databases
+try {
+  db.exec(`ALTER TABLE track_interactions ADD COLUMN total_duration_listened REAL DEFAULT 0;`);
+} catch (e) {
+  // Column already exists
+}
+
 console.log('[SmartRadio DB] SQLite database initialized at:', dbPath);
 
 // In-memory caches for fast sub-millisecond retrieval

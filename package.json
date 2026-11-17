@@ -1,9 +1,9 @@
 {
   "name": "metrolist-web",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Ghosttunes — Premium Music Player for Windows & macOS",
-  "author": "D!g!†@L G#0$†",
+  "author": "Ghosttunes Studio",
   "contributors": [
     {
       "name": "Kingsley Opoku",
@@ -33,7 +33,7 @@
   "build": {
     "appId": "com.ghosttunes.app",
     "productName": "Ghosttunes",
-    "copyright": "Copyright © 2026 D!g!†@L G#0$†",
+    "copyright": "Copyright © 2026 Ghosttunes Studio",
     "publish": [
       {
         "provider": "github",
