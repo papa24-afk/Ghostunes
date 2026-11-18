@@ -60,8 +60,8 @@ class MainActivity : ComponentActivity() {
         flickSensor = FlickSensor(this, flickMonitor) { handoff.trigger("flick") }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                combine(settings.settings, playback.state) { s, p ->
-                    (s.flickEnabled && !(s.flickInBackground && p.isPlaying)) to s.flickSensitivity
+                combine(settings.settings, playback.state, handoff.remote) { s, p, r ->
+                    (s.flickEnabled && !(s.flickInBackground && (p.isPlaying || r != null))) to s.flickSensitivity
                 }.collect { (on, sensitivity) ->
                     if (on) flickSensor?.start(sensitivity) else flickSensor?.stop()
                 }

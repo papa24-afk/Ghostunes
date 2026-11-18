@@ -121,7 +121,7 @@ class FlickDetectorTest {
     }
 
     @Test fun `sensitivity scales the threshold`() {
-        val gentle = concat(still(800), flick(push = 9.8, brake = 6.8), still(800))
+        val gentle = concat(still(800), flick(push = 7.6, brake = 5.0), still(800))
         assertEquals("high", 1, count(gentle, config = FlickConfig().scaled(0.8f)))
         assertEquals("medium", 1, count(gentle, config = FlickConfig().scaled(1.0f)))
         assertEquals("low", 0, count(gentle, config = FlickConfig().scaled(1.3f)))
@@ -142,7 +142,14 @@ class FlickDetectorTest {
         doubleArrayOf(noise(0.8), v + noise(0.8), noise(0.8))
     }, still(800))))
 
-    @Test fun `a gentle movement below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 6.0, brake = 4.0), still(800))))
+    @Test fun `a gentle movement below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 4.0, brake = 3.0), still(800))))
+
+    @Test fun `a slight flick fires`() = assertEquals(1, count(concat(still(800), flick(push = 8.0, brake = 5.5), still(800))))
+
+    @Test fun `a slight wiggle fires`() = assertEquals(1, count(concat(still(800), wiggle(600, amp = 6.0), still(800))))
+
+    @Test fun `a slight flick right after moving the phone fires`() =
+        assertEquals(1, count(concat(still(800), pickUp(6.0), still(150), flick(push = 9.0, brake = 6.0), still(800))))
 
     @Test fun `a tiny left-right wiggle fires fast`() {
         for (axis in 0..2) {
@@ -199,6 +206,25 @@ class FlickDetectorTest {
 
     @Test fun `slow rocking does not fire`() =
         assertEquals(0, countTwist({ t -> doubleArrayOf(5.0 * sin(2 * PI * t / 1000.0), noise(0.2), noise(0.2)) }, 4000))
+
+    /** A real hand shake: the phone turns as it moves, so each swing points a different way. */
+    private fun messyShake(ms: Long, amp: Double = 14.0) = gen(ms) { t ->
+        val k = t / 110
+        val v = pulse(t, k * 110, 110, if (k % 2 == 0L) amp else -amp)
+        val a = k * 0.9
+        doubleArrayOf(v * cos(a) + noise(1.5), v * sin(a) + noise(1.5), v * 0.4 + noise(1.5))
+    }
+
+    @Test fun `a messy real-world shake fires within half a second`() {
+        val d = FlickDetector()
+        d.gravityZ = 9.8f
+        val trace = concat(still(1500), messyShake(1200), still(800))
+        val firedAt = trace.firstOrNull { d.addLinear(it.x, it.y, it.z, it.t) }?.t
+        assertEquals(true, firedAt != null && firedAt - 1500 <= 500)
+    }
+
+    @Test fun `a messy shake fires once from raw accelerometer data`() =
+        assertEquals(1, count(withGravity(concat(still(1500), messyShake(1200), still(800))), raw = true))
 
     @Test fun `a slow sway does not fire`() = assertEquals(0, count(concat(still(800), gen(2400) { t ->
         doubleArrayOf(noise(0.6), 7.5 * sin(2 * PI * t / 1200.0) + noise(0.6), noise(0.6))

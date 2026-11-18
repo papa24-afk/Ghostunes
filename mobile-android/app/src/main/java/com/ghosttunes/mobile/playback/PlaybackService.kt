@@ -129,6 +129,8 @@ class PlaybackService : MediaSessionService() {
                 .distinctUntilChanged()
                 .collect { updateBackgroundFlick() }
         }
+        // While this phone is controlling another device, keep listening so a shake takes the music back.
+        scope.launch { handoff.remote.map { it != null }.distinctUntilChanged().collect { updateBackgroundFlick() } }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -284,7 +286,7 @@ class PlaybackService : MediaSessionService() {
     private fun updateBackgroundFlick() {
         val s = settings.current
         beacon.hold("playing", s.bringClose && player.isPlaying && screenOn)
-        val shouldRun = s.flickEnabled && s.flickInBackground && player.isPlaying && screenOn
+        val shouldRun = s.flickEnabled && s.flickInBackground && (player.isPlaying || handoff.remote.value != null) && screenOn
         if (shouldRun) {
             val sensor = flickSensor ?: FlickSensor(this, flickMonitor) { handoff.trigger("flick") }.also { flickSensor = it }
             sensor.start(s.flickSensitivity)

@@ -136,10 +136,16 @@ class HandoffCoordinator @Inject constructor(
 
     private suspend fun run() {
         try {
-            // Already connected (Wi-Fi or Bluetooth)? Go straight away. Else find the PC first.
-            if (link.get().via.value == null && locator.ensure(allowScan = false) == null && locator.ensure(allowScan = true) == null) {
-                show(HandoffStatus.Failed(DESKTOP_OFFLINE))
-                return
+            // Already connected (Wi-Fi or Bluetooth)? Go straight away. Else a quick look for the PC
+            // (max 4 s, so a shake is never stuck for long); a full search carries on in the background
+            // and the next shake works as soon as it finds the PC.
+            if (link.get().via.value == null) {
+                val found = withTimeoutOrNull(4_000) { locator.ensure(allowScan = false) }
+                if (found == null) {
+                    scope.launch { runCatching { locator.ensure(allowScan = true) } }
+                    show(HandoffStatus.Failed(DESKTOP_OFFLINE))
+                    return
+                }
             }
             val controller = playback.controller()
             val (playing, current) = withContext(Dispatchers.Main) { controller.isPlaying to controller.currentMediaItem }
