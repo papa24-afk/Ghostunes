@@ -687,6 +687,9 @@ async function getYtdlTrackInfo(videoId) {
 // 3. Audio Streaming Proxy with HTTP 206 Range Support powered by @distube/ytdl-core
 app.get('/api/stream/:id', async (req, res) => {
   const videoId = req.params.id;
+  const trackTitle = req.query.title ? String(req.query.title) : '';
+  const trackArtist = req.query.artist ? String(req.query.artist) : '';
+  const videoId = req.params.id;
   const sanitizedId = String(videoId || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
 
   // If local offline download exists on disk, stream it immediately with native 206 byte-ranges
@@ -715,7 +718,35 @@ app.get('/api/stream/:id', async (req, res) => {
   }
 
   try {
-    const info = await getYtdlTrackInfo(videoId);
+    let info;
+    try {
+      info = await getYtdlTrackInfo(videoId);
+    } catch (primaryStreamErr) {
+      if (trackTitle) {
+        console.warn(`[Stream API] Track ${videoId} unavailable (${primaryStreamErr.message}). Searching fallback release for "${trackTitle} ${trackArtist}"...`);
+        try {
+          const innertube = await getInnertube();
+          const searchResult = await innertube.music.search(`${trackTitle} ${trackArtist}`, { type: 'song' });
+          const altSong = searchResult.songs?.contents?.find(s => s.id && s.id !== videoId);
+          if (altSong) {
+            console.log(`[Stream API] Found fallback match: ${altSong.id} ("${altSong.title}" by ${altSong.artists?.[0]?.name})`);
+            info = await getYtdlTrackInfo(altSong.id);
+          } else {
+            const genSearch = await innertube.search(`${trackTitle} ${trackArtist} audio`);
+            const altVideo = genSearch.videos?.find(v => v.id && v.id !== videoId);
+            if (altVideo) {
+              console.log(`[Stream API] Found fallback video match: ${altVideo.id} ("${altVideo.title?.text}")`);
+              info = await getYtdlTrackInfo(altVideo.id);
+            }
+          }
+        } catch (searchFallbackErr) {
+          console.warn(`[Stream API] Fallback search failed: ${searchFallbackErr.message}`);
+        }
+      }
+      if (!info) {
+        throw primaryStreamErr;
+      }
+    }
     // Prefer MP4 container (AAC) for standard HTML5 byte-range seekability across Chromium and Electron
     let format = chooseFormat(info.formats, { 
       filter: (f) => f.hasAudio && !f.hasVideo && f.container === 'mp4', 
@@ -756,7 +787,7 @@ app.get('/api/stream/:id', async (req, res) => {
         res.setHeader('Content-Length', chunkSize);
 
         stream = await ytdlClient.download(info, {
-          filter: downloadFilter,
+          format,
           quality: 'highestaudio',
           range: { start, end }
         });
@@ -769,7 +800,7 @@ app.get('/api/stream/:id', async (req, res) => {
       }
       res.status(200);
       stream = await ytdlClient.download(info, {
-        filter: downloadFilter,
+        format,
         quality: 'highestaudio'
       });
     }

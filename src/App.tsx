@@ -819,6 +819,7 @@ export function App() {
   const isSeekingRef = useRef(false);
   const seekTimeoutRef = useRef<any>(null);
   const isLocalActiveRef = useRef(false);
+  const audioErrorRetryRef = useRef<number>(0);
   const isRepeatRef = useRef(isRepeat);
   isRepeatRef.current = isRepeat;
   const autoplayRef = useRef(autoplay);
@@ -1540,7 +1541,12 @@ export function App() {
       setPlaybackError('This song is not available offline. Connect to the internet or choose a local song.');
       return;
     } else {
-      audioSourceUrl = getApiUrl(`/api/stream/${track.id}`);
+      const streamParams = new URLSearchParams();
+      if (track.title) streamParams.set('title', track.title);
+      if (track.artist) streamParams.set('artist', track.artist);
+      const qs = streamParams.toString();
+      audioSourceUrl = getApiUrl(`/api/stream/${track.id}${qs ? `?${qs}` : ''}`);
+      audioErrorRetryRef.current = 0;
       isLocal = false;
     }
 
@@ -2767,6 +2773,32 @@ export function App() {
           const request = playRequestRef.current;
           if (!targetTrack) return;
           musicMemory.onPlaybackStateChange(false, audioRef.current?.currentTime || 0);
+
+          // Auto-retry transient stream stalls/errors once before giving up
+          if (!isOfflineMode && navigator.onLine && audioRef.current && audioErrorRetryRef.current < 2) {
+            audioErrorRetryRef.current += 1;
+            console.warn(`[Audio] Stream error encountered for "${targetTrack.title}", auto-retrying (${audioErrorRetryRef.current}/2)...`);
+            setTimeout(() => {
+              if (request !== playRequestRef.current || !audioRef.current) return;
+              audioRef.current.load();
+              audioRef.current.play().then(() => {
+                if (request === playRequestRef.current) {
+                  setIsPlaying(true);
+                  setPlaybackStatus('playing');
+                  setPlaybackError(null);
+                  audioErrorRetryRef.current = 0;
+                }
+              }).catch(() => {
+                if (request === playRequestRef.current) {
+                  setIsPlaying(false);
+                  setPlaybackStatus('error');
+                  setPlaybackError('This song is unavailable. Try again or choose another song.');
+                }
+              });
+            }, 600);
+            return;
+          }
+
           // Recover only the same recording, and respect the user's offline setting.
           if (isLocalActiveRef.current && !isOfflineMode && navigator.onLine && audioRef.current) {
             isLocalActiveRef.current = false;
