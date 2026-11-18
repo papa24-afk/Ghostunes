@@ -66,6 +66,7 @@ class FlickSensor(
     private val accel: Sensor? = manager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private val proximity: Sensor? = manager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
     private val gravitySensor: Sensor? = manager?.getDefaultSensor(Sensor.TYPE_GRAVITY)
+    private val gyro: Sensor? = manager?.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
     private val detector = FlickDetector()
     private var running = false
 
@@ -80,6 +81,7 @@ class FlickSensor(
         manager.registerListener(this, main, SAMPLING_US)
         proximity?.let { manager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
         if (linear != null) gravitySensor?.let { manager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
+        gyro?.let { manager.registerListener(this, it, SAMPLING_US) }
         monitor?.setSensor(if (linear != null) "Linear acceleration (${main.name})" else "Accelerometer + gravity filter (${main.name})")
     }
 
@@ -94,6 +96,13 @@ class FlickSensor(
         when (event.sensor.type) {
             Sensor.TYPE_PROXIMITY -> detector.proximityNear = event.values[0] < (proximity?.maximumRange ?: 5f) * 0.5f
             Sensor.TYPE_GRAVITY -> detector.gravityZ = event.values[2]
+            Sensor.TYPE_GYROSCOPE -> {
+                if (detector.addGyro(event.values[0], event.values[1], event.values[2], event.timestamp / 1_000_000)) {
+                    context.vibrate(35)
+                    monitor?.onDetection("twist")
+                    onFlick()
+                }
+            }
             Sensor.TYPE_LINEAR_ACCELERATION, Sensor.TYPE_ACCELEROMETER -> {
                 val t = event.timestamp / 1_000_000
                 val (x, y, z) = Triple(event.values[0], event.values[1], event.values[2])

@@ -38,8 +38,19 @@ data class FlickConfig(
     val shakeMinGapMs: Long = 60,
     /** ...and within this long after the previous one ended (rejects walking / slow sways). */
     val shakeMaxGapMs: Long = 320,
+    /** Swings of a shake start at least this often (≥ ~1.6 per second); slower is rocking or swaying. */
+    val shakeMaxPeriodMs: Long = 320,
     /** A single swing longer than this is a slow movement (picking the phone up), not a shake. */
-    val shakeMaxSwingMs: Long = 170,
+    val shakeMaxSwingMs: Long = 200,
+    /**
+     * Shakes don't need the phone held still first (you can pick it up and shake at once, or keep
+     * shaking): only nothing violent just before (rules out running / knocks in a pocket).
+     */
+    val calmPeak: Float = 22f,
+    val calmMean: Float = 9f,
+    /** Wrist twist back and forth (gyroscope), rad/s per swing. */
+    val twistThreshold: Float = 4f,
+    val twistSwings: Int = 3,
     /**
      * The phone must be fairly steady before the push (rejects walking, running, pockets):
      * in the [quietWindowMs] ending [quietGapMs] before the push, no sample above
@@ -52,7 +63,7 @@ data class FlickConfig(
     /** Low-pass factor for estimating gravity from raw accelerometer data (~100 Hz). */
     val gravityAlpha: Float = 0.97f,
 ) {
-    fun scaled(scale: Float) = copy(pushThreshold = pushThreshold * scale, brakeThreshold = brakeThreshold * scale, shakeThreshold = shakeThreshold * scale)
+    fun scaled(scale: Float) = copy(pushThreshold = pushThreshold * scale, brakeThreshold = brakeThreshold * scale, shakeThreshold = shakeThreshold * scale, twistThreshold = twistThreshold * scale)
 }
 
 class FlickDetector(var config: FlickConfig = FlickConfig()) {
@@ -70,11 +81,11 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
     private val dir = FloatArray(3)
     private var peak = 0f
 
-    // Current shake candidate.
-    private var swings = 0
-    private val swingDir = FloatArray(3)
-    private var swingStartedAt = 0L
-    private var swingLastAt = 0L
+    // Shake candidates: moving (linear acceleration) and twisting (gyroscope).
+    private val moveSwings = SwingTracker()
+    private val twistSwings = SwingTracker()
+    /** Nothing violent in the last moment (updated from acceleration samples). */
+    private var calm = false
 
     /** Proximity sensor reads "near" (pocket, bag, face). */
     var proximityNear: Boolean = false
@@ -90,7 +101,9 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         gravity = null
         firstSampleAt = -1L
         pushing = false
-        swings = 0
+        moveSwings.reset()
+        twistSwings.reset()
+        calm = false
     }
 
     /** Linear acceleration sample (gravity removed). Returns true when a flick completes. */
@@ -102,13 +115,14 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         val quietTo = tMs - c.quietGapMs
         var sum = 0f
         var n = 0
-        var peakOk = true
+        var max = 0f
         for (h in history) {
             if (h.t < quietFrom || h.t >= quietTo) continue
             sum += h.magnitude; n++
-            if (h.magnitude >= c.quietThreshold) peakOk = false
+            if (h.magnitude > max) max = h.magnitude
         }
-        val quietBefore = peakOk && (n == 0 || sum / n < c.quietMean)
+        val mean = if (n == 0) 0f else sum / n
+        val quietBefore = max < c.quietThreshold && mean < c.quietMean
         history.addLast(Sample(tMs, m))
         while (history.isNotEmpty() && history.first().t < quietFrom) history.removeFirst()
         if (firstSampleAt < 0) firstSampleAt = tMs
@@ -116,11 +130,13 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
 
         if (tMs - lastFiredAt < c.cooldownMs) {
             pushing = false
-            swings = 0
+            moveSwings.reset()
+            twistSwings.reset()
             return false
         }
 
-        if (shake(x, y, z, m, tMs, warmedUp && quietBefore)) {
+        calm = warmedUp && max < c.calmPeak && mean < c.calmMean
+        if (moveSwings.add(x, y, z, m, tMs, c.shakeThreshold, c.shakeSwings, calm) && !blocked()) {
             pushing = false
             lastFiredAt = tMs
             return true
@@ -175,36 +191,65 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         return false
     }
 
-    /** Tracks alternating swings; true when a small shake completes. */
-    private fun shake(x: Float, y: Float, z: Float, m: Float, tMs: Long, steadyBefore: Boolean): Boolean {
+    /** Gyroscope sample (rad/s): a quick wrist twist back and forth also counts as a shake. */
+    fun addGyro(x: Float, y: Float, z: Float, tMs: Long): Boolean {
         val c = config
-        if (swings > 0 && tMs - swingLastAt > c.shakeMaxGapMs) swings = 0
-        if (m < c.shakeThreshold) return false
-        val ux = x / m; val uy = y / m; val uz = z / m
-        if (swings == 0) {
-            if (!steadyBefore) return false
-            swings = 1
-            swingDir[0] = ux; swingDir[1] = uy; swingDir[2] = uz
-            swingStartedAt = tMs; swingLastAt = tMs
-            return false
-        }
-        val cos = ux * swingDir[0] + uy * swingDir[1] + uz * swingDir[2]
-        when {
-            cos > 0.3f -> {
-                swingLastAt = tMs // same swing continues
-                if (tMs - swingStartedAt > c.shakeMaxSwingMs) swings = 0
-            }
-            cos <= -0.5f && tMs - swingStartedAt >= c.shakeMinGapMs -> {
-                swings++
-                swingDir[0] = ux; swingDir[1] = uy; swingDir[2] = uz
-                swingStartedAt = tMs; swingLastAt = tMs
-                if (swings >= c.shakeSwings) {
-                    swings = 0
-                    return !blocked()
-                }
-            }
+        if (tMs - lastFiredAt < c.cooldownMs) { twistSwings.reset(); return false }
+        val w = sqrt(x * x + y * y + z * z)
+        if (twistSwings.add(x, y, z, w, tMs, c.twistThreshold, c.twistSwings, calm) && !blocked()) {
+            pushing = false
+            moveSwings.reset()
+            lastFiredAt = tMs
+            return true
         }
         return false
+    }
+
+    /** Counts quick swings that alternate direction (left-right-left, or twist-untwist-twist). */
+    private inner class SwingTracker {
+        private var swings = 0
+        private val dir = FloatArray(3)
+        private var startedAt = 0L
+        private var lastAt = 0L
+        /** A too-slow swing: ignore it until it's over. */
+        private var spent = false
+
+        fun reset() { swings = 0; spent = false }
+
+        fun add(x: Float, y: Float, z: Float, m: Float, tMs: Long, threshold: Float, needed: Int, canStart: Boolean): Boolean {
+            val c = config
+            if (swings > 0 && tMs - lastAt > c.shakeMaxGapMs) swings = 0
+            if (m < threshold) { spent = false; return false }
+            if (spent) return false
+            val ux = x / m; val uy = y / m; val uz = z / m
+            if (swings == 0) {
+                if (!canStart) return false
+                swings = 1
+                dir[0] = ux; dir[1] = uy; dir[2] = uz
+                startedAt = tMs; lastAt = tMs
+                return false
+            }
+            val cos = ux * dir[0] + uy * dir[1] + uz * dir[2]
+            when {
+                cos > 0.3f -> {
+                    lastAt = tMs // same swing continues
+                    if (tMs - startedAt > c.shakeMaxSwingMs) { swings = 0; spent = true } // too slow: a movement, not a shake
+                }
+                cos <= -0.5f && tMs - startedAt > c.shakeMaxPeriodMs -> {
+                    // Reversed, but too slowly: start counting again from this swing.
+                    swings = if (canStart) 1 else 0
+                    dir[0] = ux; dir[1] = uy; dir[2] = uz
+                    startedAt = tMs; lastAt = tMs
+                }
+                cos <= -0.5f && tMs - startedAt >= c.shakeMinGapMs -> {
+                    swings++
+                    dir[0] = ux; dir[1] = uy; dir[2] = uz
+                    startedAt = tMs; lastAt = tMs
+                    if (swings >= needed) { swings = 0; return true }
+                }
+            }
+            return false
+        }
     }
 
     /** Raw accelerometer sample including gravity; gravity is removed with a low-pass filter. */

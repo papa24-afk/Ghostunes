@@ -159,6 +159,47 @@ class FlickDetectorTest {
         }
     }
 
+    private fun wiggle(ms: Long, amp: Double = 8.5, halfMs: Long = 120, axis: Int = 0) = gen(ms) { t ->
+        val k = t / halfMs
+        val v = pulse(t, k * halfMs, halfMs, if (k % 2 == 0L) amp else -amp)
+        doubleArrayOf(noise(0.6), noise(0.6), noise(0.6)).also { it[axis] += v }
+    }
+
+    @Test fun `shaking straight after picking the phone up fires`() =
+        assertEquals(1, count(concat(still(800), pickUp(9.0), wiggle(600), still(800))))
+
+    @Test fun `keeping on shaking fires (once per cooldown)`() =
+        assertEquals(1, count(concat(still(800), wiggle(1800), still(500))))
+
+    /** Linear acceleration stays near zero; gyro (rad/s) carries the twist. */
+    private fun countTwist(gyro: (Long) -> DoubleArray, ms: Long, before: Long = 900): Int {
+        val d = FlickDetector()
+        d.gravityZ = 9.8f
+        var fired = 0
+        for (t in 0 until before + ms step dt) {
+            if (d.addLinear(noise(0.4).toFloat(), noise(0.4).toFloat(), noise(0.4).toFloat(), t)) fired++
+            val w = if (t < before) doubleArrayOf(noise(0.1), noise(0.1), noise(0.1)) else gyro(t - before)
+            if (d.addGyro(w[0].toFloat(), w[1].toFloat(), w[2].toFloat(), t)) fired++
+        }
+        return fired
+    }
+
+    @Test fun `a quick wrist twist back and forth fires`() {
+        for (axis in 0..2) assertEquals("axis $axis", 1, countTwist({ t ->
+            val k = t / 130
+            doubleArrayOf(noise(0.2), noise(0.2), noise(0.2)).also { it[axis] += pulse(t, k * 130, 130, if (k % 2 == 0L) 6.0 else -6.0) }
+        }, 700))
+    }
+
+    @Test fun `turning the phone over once does not fire`() =
+        assertEquals(0, countTwist({ t -> doubleArrayOf(pulse(t, 0, 350, 7.0), noise(0.2), noise(0.2)) }, 1200))
+
+    @Test fun `twist and back once does not fire`() =
+        assertEquals(0, countTwist({ t -> doubleArrayOf(pulse(t, 0, 130, 6.0) + pulse(t, 130, 130, -6.0), noise(0.2), noise(0.2)) }, 1200))
+
+    @Test fun `slow rocking does not fire`() =
+        assertEquals(0, countTwist({ t -> doubleArrayOf(5.0 * sin(2 * PI * t / 1000.0), noise(0.2), noise(0.2)) }, 4000))
+
     @Test fun `a slow sway does not fire`() = assertEquals(0, count(concat(still(800), gen(2400) { t ->
         doubleArrayOf(noise(0.6), 7.5 * sin(2 * PI * t / 1200.0) + noise(0.6), noise(0.6))
     }, still(800))))
