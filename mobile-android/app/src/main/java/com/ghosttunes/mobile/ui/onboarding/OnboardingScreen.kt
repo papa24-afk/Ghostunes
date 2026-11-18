@@ -97,6 +97,8 @@ class ConnectViewModel @Inject constructor(
         _state.update { it.copy(address = url, test = TestState.Testing) }
         val ok = music.checkServer(url, 4000)
         _state.update { it.copy(test = if (ok) TestState.Ok else TestState.Failed) }
+        // A working address is saved right away (the separate Save step was easy to miss).
+        if (ok) save()
     }
 
     fun scan() {
@@ -107,13 +109,17 @@ class ConnectViewModel @Inject constructor(
                 _state.update { it.copy(scanProgress = p.checked / p.total.coerceAtLeast(1).toFloat(), found = p.found) }
                 if (p.found.size == 1 && _state.value.test != TestState.Ok) {
                     _state.update { it.copy(address = p.found.first(), test = TestState.Ok) }
+                    save()
                 }
             }
             _state.update { it.copy(scanning = false, scanDone = true) }
         }
     }
 
-    fun choose(url: String) = _state.update { it.copy(address = url, test = TestState.Ok) }
+    fun choose(url: String) {
+        _state.update { it.copy(address = url, test = TestState.Ok) }
+        save()
+    }
 
     fun save(onDone: () -> Unit = {}) = viewModelScope.launch {
         val url = ServerConfig.normalize(_state.value.address) ?: return@launch
@@ -187,7 +193,7 @@ fun ServerConnectPanel(s: ConnectState, vm: ConnectViewModel) {
     }
 
     AnimatedVisibility(s.test == TestState.Ok) {
-        Text("Connected. Ghosttunes is running on this PC.", style = TypeScale.body, color = GT.Success, modifier = Modifier.padding(top = Space.sm))
+        Text("Connected and saved. Ghosttunes is running on this PC.", style = TypeScale.body, color = GT.Success, modifier = Modifier.padding(top = Space.sm))
     }
     AnimatedVisibility(s.test == TestState.Failed) {
         Column(Modifier.padding(top = Space.md).fillMaxWidth().clip(RoundedCornerShape(Radii.hero)).background(GT.Surface2).padding(Space.md)) {
