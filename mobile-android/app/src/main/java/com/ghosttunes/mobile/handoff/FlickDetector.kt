@@ -13,17 +13,17 @@ import kotlin.math.sqrt
  */
 data class FlickConfig(
     /** Peak linear acceleration of the push, m/s². */
-    val pushThreshold: Float = 15f,
+    val pushThreshold: Float = 11f,
     /** Braking along the opposite direction, m/s². */
-    val brakeThreshold: Float = 9f,
+    val brakeThreshold: Float = 7f,
     /** Braking must arrive within this long after the push starts. */
     val brakeWindowMs: Long = 400,
     /** The push must stay strong this long (rejects impacts like setting it on a table)... */
     val minPushMs: Long = 30,
     /** ...but not longer than this (a flick is short; lifting or carrying is not). */
-    val maxPushMs: Long = 260,
+    val maxPushMs: Long = 220,
     /** A flick stops abruptly: braking must start within this long after the push ends. */
-    val brakeGapMs: Long = 110,
+    val brakeGapMs: Long = 90,
     /** Braking must point back along the push: cosine between them ≤ this. */
     val oppositeCos: Float = -0.6f,
     /** No further flicks for this long after one fires. */

@@ -100,7 +100,7 @@ class ImportViewModel @Inject constructor(
                 val total = resolved.sources.size + resolved.ready.size
                 _state.value = ImportState.Matching(resolved.title, 0, total)
                 val result = importer.match(resolved) { d, t -> _state.update { s -> if (s is ImportState.Matching) s.copy(done = d, total = t) else s } }
-                val id = library.importPlaylist(result.title, result.tracks)
+                val id = library.importPlaylist(result.title, result.tracks, result.cover)
                 _state.value = ImportState.Done(id, result.title, result.tracks.size, result.total, result.unmatched.map { "${it.title} — ${it.artist}" })
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

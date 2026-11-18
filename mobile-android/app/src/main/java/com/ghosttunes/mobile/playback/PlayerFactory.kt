@@ -24,6 +24,11 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Tracks to load from the PC once (a song pulled from the PC: its server already has it ready). */
+object StreamHints {
+    val preferPc: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+}
+
 /** One SimpleCache per directory per process. 256 MB of recently streamed audio. */
 @OptIn(UnstableApi::class)
 @Singleton
@@ -81,6 +86,8 @@ class PlayerFactory @Inject constructor(
             fun viaPc() = spec.buildUpon().setUri(Uri.parse(config.streamUrl(id, low))).setKey("pc:$id:$q").build()
             fun viaPhone() = direct.stream(id, low).let { s -> spec.buildUpon().setUri(Uri.parse(s.url)).setKey("yt:$id:$q").build() }
             if (!settings.current.streamFromPhone) return@Factory viaPc()
+            // Pulled from the PC: the PC is already streaming it, so it's instant over the LAN.
+            if (StreamHints.preferPc.remove(id)) return@Factory viaPc()
             try {
                 viaPhone()
             } catch (e: Exception) {

@@ -121,10 +121,10 @@ class FlickDetectorTest {
     }
 
     @Test fun `sensitivity scales the threshold`() {
-        val gentle = concat(still(800), flick(push = 16.0, brake = 10.0), still(800))
-        assertEquals("high", 1, count(gentle, config = FlickConfig().scaled(0.85f)))
+        val gentle = concat(still(800), flick(push = 12.5, brake = 8.0), still(800))
+        assertEquals("high", 1, count(gentle, config = FlickConfig().scaled(0.8f)))
         assertEquals("medium", 1, count(gentle, config = FlickConfig().scaled(1.0f)))
-        assertEquals("low", 0, count(gentle, config = FlickConfig().scaled(1.2f)))
+        assertEquals("low", 0, count(gentle, config = FlickConfig().scaled(1.3f)))
     }
 
     @Test fun `a light everyday flick fires at medium`() =
@@ -135,7 +135,14 @@ class FlickDetectorTest {
     @Test fun `push without braking does not fire`() =
         assertEquals(0, count(concat(still(800), gen(600) { t -> doubleArrayOf(noise(1.0), pulse(t, 0, 160, 26.0), noise(1.0)) }, still(800))))
 
-    @Test fun `weak flick below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 12.0, brake = 8.0), still(800))))
+    @Test fun `a small flick fires`() = assertEquals(1, count(concat(still(800), flick(push = 12.0, brake = 8.0), still(800))))
+
+    @Test fun `a small shake (quick back and forth) fires once`() = assertEquals(1, count(concat(still(800), gen(700) { t ->
+        val v = pulse(t, 0, 110, 13.0) + pulse(t, 110, 110, -12.0) + pulse(t, 220, 110, 12.0) + pulse(t, 330, 110, -11.0)
+        doubleArrayOf(noise(0.8), v + noise(0.8), noise(0.8))
+    }, still(800))))
+
+    @Test fun `a gentle movement below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 8.0, brake = 5.0), still(800))))
 
     @Test fun `a diagonal flick (phone held tilted) fires`() = assertEquals(1, count(concat(still(800), gen(500) { t ->
         val v = pulse(t, 0, 140, 16.0) + pulse(t, 140, 160, -11.0)

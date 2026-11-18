@@ -21,6 +21,8 @@ data class PlaylistEntity(
     val name: String,
     val createdAt: Long,
     val updatedAt: Long,
+    /** Custom or imported cover: a file path on this phone or an https URL. */
+    val cover: String? = null,
 )
 
 @Entity(tableName = "playlist_tracks", primaryKeys = ["playlistId", "trackId"])
@@ -50,7 +52,7 @@ data class QueueEntity(@PrimaryKey val position: Int, val json: String)
 @Entity(tableName = "followed_artists")
 data class FollowedArtistEntity(@PrimaryKey val id: String, val name: String, val avatar: String, val followedAt: Long)
 
-data class PlaylistSummary(val id: Long, val name: String, val updatedAt: Long, val count: Int, val firstJson: String?)
+data class PlaylistSummary(val id: Long, val name: String, val updatedAt: Long, val count: Int, val firstJson: String?, val cover: String?)
 
 @Dao
 interface LibraryDao {
@@ -62,7 +64,7 @@ interface LibraryDao {
 
     // playlists
     @Query(
-        """SELECT p.id, p.name, p.updatedAt, COUNT(t.trackId) AS count,
+        """SELECT p.id, p.name, p.updatedAt, p.cover, COUNT(t.trackId) AS count,
            (SELECT json FROM playlist_tracks WHERE playlistId = p.id ORDER BY position LIMIT 1) AS firstJson
            FROM playlists p LEFT JOIN playlist_tracks t ON t.playlistId = p.id GROUP BY p.id ORDER BY p.updatedAt DESC"""
     )
@@ -77,6 +79,7 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun addToPlaylist(e: PlaylistTrackEntity)
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :id AND trackId = :trackId") suspend fun removeFromPlaylist(id: Long, trackId: String)
     @Query("UPDATE playlists SET updatedAt = :now WHERE id = :id") suspend fun touchPlaylist(id: Long, now: Long)
+    @Query("UPDATE playlists SET cover = :cover, updatedAt = :now WHERE id = :id") suspend fun setCover(id: Long, cover: String?, now: Long)
 
     @Transaction
     suspend fun deletePlaylist(id: Long) {
@@ -132,10 +135,18 @@ interface QueueDao {
         LikedEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, HistoryEntity::class,
         DownloadEntity::class, QueueEntity::class, FollowedArtistEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
+    companion object {
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN cover TEXT")
+            }
+        }
+    }
+
     abstract fun library(): LibraryDao
     abstract fun downloads(): DownloadDao
     abstract fun queue(): QueueDao

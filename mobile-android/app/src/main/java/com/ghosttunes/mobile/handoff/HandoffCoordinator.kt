@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import com.ghosttunes.mobile.data.model.CommandRequest
 import com.ghosttunes.mobile.data.model.DesktopState
 import com.ghosttunes.mobile.data.model.HandoffSnapshot
 import com.ghosttunes.mobile.data.model.PushRequest
@@ -17,8 +18,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -36,9 +40,24 @@ sealed interface HandoffStatus {
     data class Failed(override val message: String) : HandoffStatus { override val terminal = true }
 }
 
+/** The phone is controlling the PC (Spotify Connect style). Position is valid at [fetchedAt] (elapsedRealtime). */
+data class RemoteState(
+    val pcName: String,
+    val track: Track,
+    val isPlaying: Boolean,
+    val positionSec: Double,
+    val durationSec: Double,
+    val fetchedAt: Long,
+) {
+    fun positionNow(): Double {
+        val p = if (isPlaying) positionSec + (SystemClock.elapsedRealtime() - fetchedAt) / 1000.0 else positionSec
+        return if (durationSec > 0) p.coerceAtMost(durationSec) else p
+    }
+}
+
 /**
  * Moves playback between this phone and Ghosttunes on the PC (serverHandoff.js protocol).
- * PUSH when the phone is playing, PULL when it isn't.
+ * PUSH when the phone is playing, PULL when it isn't. After a push the phone becomes a remote for the PC.
  */
 @Singleton
 class HandoffCoordinator @Inject constructor(
@@ -47,6 +66,8 @@ class HandoffCoordinator @Inject constructor(
     private val playback: PlaybackConnection,
     private val scope: CoroutineScope,
     private val locator: com.ghosttunes.mobile.data.net.PcLocator,
+    private val direct: com.ghosttunes.mobile.data.direct.DirectSource,
+    private val settings: com.ghosttunes.mobile.data.prefs.SettingsRepository,
 ) {
     /** One-shot events that drive the transfer animation. */
     sealed interface Transfer {
@@ -54,14 +75,29 @@ class HandoffCoordinator @Inject constructor(
         data class ToPc(override val track: Track) : Transfer
         data class ToPhone(override val track: Track) : Transfer
     }
-    private val _transfers = kotlinx.coroutines.flow.MutableSharedFlow<Transfer>(extraBufferCapacity = 4)
-    val transfers: kotlinx.coroutines.flow.SharedFlow<Transfer> = _transfers
+    private val _transfers = MutableSharedFlow<Transfer>(extraBufferCapacity = 4)
+    val transfers: SharedFlow<Transfer> = _transfers
 
     private val _status = MutableStateFlow<HandoffStatus?>(null)
+    /** Only failures are shown to the user; success is the animation. */
     val status: StateFlow<HandoffStatus?> = _status
+
+    private val _remote = MutableStateFlow<RemoteState?>(null)
+    val remote: StateFlow<RemoteState?> = _remote
+
     private var lastTriggerAt = 0L
     private var job: Job? = null
     private var clearJob: Job? = null
+    private var remoteJob: Job? = null
+    private var pcName: String = "your PC"
+    private var warmedId: String? = null
+
+    init {
+        // Playing something on the phone ends remote mode.
+        scope.launch {
+            playback.state.collect { s -> if (s.isPlaying && _remote.value != null && job?.isActive != true) stopRemote() }
+        }
+    }
 
     val deviceName: String
         get() {
@@ -70,17 +106,22 @@ class HandoffCoordinator @Inject constructor(
             return if (model.startsWith(maker, ignoreCase = true)) model else "$maker $model".trim()
         }
 
-    /** Debounced (NFC can fire twice; flick + button within 4 s count once). */
+    /** Debounced (NFC can fire twice; flick + button within 2 s count once). */
     fun trigger(source: String): Boolean {
         val now = SystemClock.elapsedRealtime()
         if (now - lastTriggerAt < DEBOUNCE_MS || job?.isActive == true) return false
         lastTriggerAt = now
         Log.i(TAG, "trigger from $source")
+        quiet = source == "near"
         job = scope.launch { run() }
         return true
     }
 
+    /** Proximity triggers fail silently (walking past the PC shouldn't pop up errors). */
+    private var quiet = false
+
     private fun show(status: HandoffStatus?) {
+        if (quiet && status is HandoffStatus.Failed) return
         clearJob?.cancel()
         _status.value = status
         if (status?.terminal == true) {
@@ -91,12 +132,9 @@ class HandoffCoordinator @Inject constructor(
     private suspend fun run() {
         try {
             // Make sure we know where the PC is on this network (re-finds it if its address changed).
-            if (locator.ensure(allowScan = false) == null) {
-                show(HandoffStatus.Working("Looking for your PC…"))
-                if (locator.ensure(allowScan = true) == null) {
-                    show(HandoffStatus.Failed(DESKTOP_OFFLINE))
-                    return
-                }
+            if (locator.ensure(allowScan = false) == null && locator.ensure(allowScan = true) == null) {
+                show(HandoffStatus.Failed(DESKTOP_OFFLINE))
+                return
             }
             val controller = playback.controller()
             val (playing, current) = withContext(Dispatchers.Main) { controller.isPlaying to controller.currentMediaItem }
@@ -114,16 +152,12 @@ class HandoffCoordinator @Inject constructor(
     // ------------------------------------------------------------------ PUSH
 
     private suspend fun push() {
-        show(HandoffStatus.Working("Sending to PC…"))
         val controller = playback.controller()
         val state = playback.state.value
         val (index, positionSec) = withContext(Dispatchers.Main) {
             controller.currentMediaItemIndex to controller.currentPosition / 1000.0
         }
-        val snapshot = buildSnapshot(state.queue, index, positionSec, deviceName) ?: run {
-            show(HandoffStatus.Failed("Nothing to send."))
-            return
-        }
+        val snapshot = buildSnapshot(state.queue, index, positionSec, deviceName) ?: return
 
         val response = withContext(Dispatchers.IO) { api.push(PushRequest(snapshot)) }
         if (response.code() == 409) {
@@ -135,11 +169,13 @@ class HandoffCoordinator @Inject constructor(
             show(HandoffStatus.Failed(UNREACHABLE))
             return
         }
+        // The PC has it: throw the art now (the phone keeps playing until the PC is audible).
+        _transfers.tryEmit(Transfer.ToPc(snapshot.track))
+        context.vibrate(20)
 
-        // Keep playing while the PC loads; poll every 300 ms for up to 15 s.
         val result = withTimeoutOrNull(PUSH_TIMEOUT_MS) {
             while (true) {
-                delay(300)
+                delay(150)
                 val s = runCatching { withContext(Dispatchers.IO) { api.handoffStatus(id) } }.getOrNull() ?: continue
                 if (s.status == "playing" || s.status == "failed") return@withTimeoutOrNull s
             }
@@ -147,15 +183,14 @@ class HandoffCoordinator @Inject constructor(
         }
         when (result?.status) {
             "playing" -> {
-                _transfers.tryEmit(Transfer.ToPc(snapshot.track))
-                withContext(Dispatchers.Main) { fadeOutAndPause(controller, 900) }
-                context.vibrate(20)
-                show(HandoffStatus.Done("Now playing on your PC"))
+                withContext(Dispatchers.Main) { fadeOutAndPause(controller, 450) }
+                _status.value = HandoffStatus.Done("")
+                startRemote(snapshot.track, snapshot.position)
             }
             "failed" -> show(HandoffStatus.Failed("Your PC couldn't play this song."))
             else -> {
                 runCatching { withContext(Dispatchers.IO) { api.release(ReleaseRequest("timeout")) } }
-                show(HandoffStatus.Failed("Your PC didn't start playing in time."))
+                show(HandoffStatus.Failed("Your PC didn't start in time."))
             }
         }
     }
@@ -163,9 +198,9 @@ class HandoffCoordinator @Inject constructor(
     // ------------------------------------------------------------------ PULL
 
     private suspend fun pull() {
-        show(HandoffStatus.Working("Checking your PC…"))
         val desktop: DesktopState = withContext(Dispatchers.IO) { api.desktop() }
         val receivedAt = SystemClock.elapsedRealtime()
+        if (desktop.name.isNotBlank()) pcName = desktop.name
         if (!desktop.online) {
             show(HandoffStatus.Failed(DESKTOP_OFFLINE))
             return
@@ -175,11 +210,13 @@ class HandoffCoordinator @Inject constructor(
             show(HandoffStatus.Failed("Nothing is playing on your PC."))
             return
         }
-        show(HandoffStatus.Working("Moving to your phone…"))
+        stopRemote()
         val queue = np.queue.ifEmpty { listOf(np.track) }
         val index = queue.indexOfFirst { it.id == np.track.id }.takeIf { it >= 0 } ?: 0
         fun target() = np.position + (SystemClock.elapsedRealtime() - receivedAt) / 1000.0
         val controller = playback.controller()
+        _transfers.tryEmit(Transfer.ToPhone(np.track))
+        com.ghosttunes.mobile.playback.StreamHints.preferPc += np.track.id
         playback.playAndAwait(queue, index, ((target() + START_LATENCY_SEC) * 1000).toLong())
 
         // Wait until ExoPlayer is actually playing this track, then land on the exact second.
@@ -187,7 +224,7 @@ class HandoffCoordinator @Inject constructor(
             while (true) {
                 val ok = withContext(Dispatchers.Main) { controller.isPlaying && controller.currentMediaItem?.mediaId == np.track.id }
                 if (ok) return@withTimeoutOrNull true
-                delay(100)
+                delay(80)
             }
             @Suppress("UNREACHABLE_CODE") false
         } ?: false
@@ -200,14 +237,85 @@ class HandoffCoordinator @Inject constructor(
             if (abs(controller.currentPosition - wantMs) > 250) controller.seekTo(wantMs)
         }
         runCatching { withContext(Dispatchers.IO) { api.release(ReleaseRequest("pulled")) } }
-        _transfers.tryEmit(Transfer.ToPhone(np.track))
         context.vibrate(20)
-        show(HandoffStatus.Done("Moved to your phone"))
+        _status.value = HandoffStatus.Done("")
+    }
+
+    // ------------------------------------------------------------------ remote (phone controls the PC)
+
+    private fun startRemote(track: Track, position: Double) {
+        _remote.value = RemoteState(pcName, track, true, position, track.durationSeconds.toDouble(), SystemClock.elapsedRealtime())
+        remoteJob?.cancel()
+        remoteJob = scope.launch {
+            var misses = 0
+            while (isActive) {
+                val d = runCatching { withContext(Dispatchers.IO) { api.desktop() } }.getOrNull()
+                val at = SystemClock.elapsedRealtime()
+                if (d == null || !d.online) {
+                    if (++misses >= 5) { _remote.value = null; break }
+                } else {
+                    misses = 0
+                    if (d.name.isNotBlank()) pcName = d.name
+                    val np = d.nowPlaying
+                    // Have the next songs ready on the phone too, so taking them back is instant.
+                    if (np != null && np.track.id != warmedId) {
+                        warmedId = np.track.id
+                        launch(Dispatchers.IO) { runCatching { direct.stream(np.track.id, settings.current.lowQualityStreaming) } }
+                    }
+                    if (np != null && _remote.value != null) {
+                        _remote.value = RemoteState(pcName, np.track, np.isPlaying, np.position, np.track.durationSeconds.toDouble(), at)
+                    }
+                }
+                delay(1_000)
+            }
+        }
+    }
+
+    fun stopRemote() {
+        remoteJob?.cancel()
+        remoteJob = null
+        _remote.value = null
+    }
+
+    private fun command(action: String, position: Double? = null) {
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.command(CommandRequest(action, position)) } }
+                .onFailure { show(HandoffStatus.Failed(UNREACHABLE)) }
+        }
+    }
+
+    fun remoteToggle() {
+        val r = _remote.value ?: return
+        _remote.value = r.copy(isPlaying = !r.isPlaying, positionSec = r.positionNow(), fetchedAt = SystemClock.elapsedRealtime())
+        command(if (r.isPlaying) "pause" else "play")
+    }
+
+    fun remoteNext() = command("next")
+    fun remotePrevious() = command("previous")
+
+    fun remoteSeek(sec: Double) {
+        _remote.value = _remote.value?.copy(positionSec = sec, fetchedAt = SystemClock.elapsedRealtime())
+        command("seek", sec)
+    }
+
+    /** "This phone" in the device picker: continue the PC's song here. */
+    fun continueOnPhone() {
+        if (job?.isActive == true) return
+        lastTriggerAt = SystemClock.elapsedRealtime()
+        job = scope.launch {
+            try {
+                pull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                show(HandoffStatus.Failed(UNREACHABLE))
+            }
+        }
     }
 
     companion object {
         private const val TAG = "GhosttunesHandoff"
-        const val DEBOUNCE_MS = 4_000L
+        const val DEBOUNCE_MS = 2_000L
         const val PUSH_TIMEOUT_MS = 15_000L
         const val PULL_TIMEOUT_MS = 15_000L
         const val START_LATENCY_SEC = 0.35
@@ -217,7 +325,7 @@ class HandoffCoordinator @Inject constructor(
 
         /**
          * Same shape as the desktop's snapshot, queue capped at 300 around the current track.
-         * Tracks never carry device-local URLs (non-https artwork falls back to the YouTube thumbnail).
+         * Tracks never carry device-local URLs (non-https artwork falls back to the video thumbnail).
          */
         fun buildSnapshot(queue: List<Track>, index: Int, positionSec: Double, deviceName: String): HandoffSnapshot? {
             if (queue.isEmpty() || index !in queue.indices) return null

@@ -143,6 +143,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), connect: ConnectView
                     ToggleRow("Flick in background", "While music plays", s.flickInBackground) { v -> vm.set { setFlickInBackground(v) } }
                 }
             }
+            ToggleRow("Bring close to PC", "Hold the phone near your PC to move the music", s.bringClose) { v -> vm.set { setBringClose(v) } }
             ValueRow("NFC sticker", "Tap to send or get music", action = if (showNfcHelp) "Hide" else "Set up") { showNfcHelp = !showNfcHelp }
             AnimatedVisibility(showNfcHelp) {
                 Text(

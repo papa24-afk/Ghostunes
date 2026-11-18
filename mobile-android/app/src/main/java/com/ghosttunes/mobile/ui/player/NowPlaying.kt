@@ -46,7 +46,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -124,11 +126,21 @@ fun NowPlaying(
     visibilityScope: AnimatedVisibilityScope,
 ) {
     val state by vm.player.collectAsState()
-    val progress by vm.progress.collectAsState()
+    val localProgress by vm.progress.collectAsState()
+    val remote by vm.remote.collectAsState()
+    val remoteProgress = rememberRemoteProgress(remote)
+    val progress = remoteProgress ?: localProgress
     val liked by vm.likedIds.collectAsState()
     val from by vm.playingFrom.collectAsState()
     val sleep by vm.sleepTimer.collectAsState()
-    val track = state.current ?: return
+    val output by vm.output.collectAsState()
+    val track = remote?.track ?: state.current ?: return
+    // When the PC is playing, every control here drives the PC.
+    val playing = remote?.isPlaying ?: state.playWhenReady
+    val doToggle: () -> Unit = { if (remote != null) vm.remoteToggle() else vm.playback.togglePlay() }
+    val doNext: () -> Unit = { if (remote != null) vm.remoteNext() else vm.playback.next() }
+    val doPrev: () -> Unit = { if (remote != null) vm.remotePrevious() else vm.playback.previous() }
+    val doSeek: (Long) -> Unit = { ms -> if (remote != null) vm.remoteSeek(ms) else vm.playback.seekTo(ms) }
     val actions = LocalActions.current
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
@@ -202,7 +214,7 @@ fun NowPlaying(
                     Spacer(Modifier.weight(1f))
 
                     // Art: shrinks when paused, swipe to skip, drag down to close.
-                    val artScale by animateFloatAsState(if (state.playWhenReady) 1f else 0.86f, Motion.artPause, label = "artScale")
+                    val artScale by animateFloatAsState(if (playing) 1f else 0.86f, Motion.artPause, label = "artScale")
                     var direction by remember { mutableIntStateOf(1) }
                     val swipe = remember { Animatable(0f) }
                     val swipeThreshold = with(density) { 90.dp.toPx() }
@@ -228,7 +240,7 @@ fun NowPlaying(
                                                 if (abs(v) > swipeThreshold) {
                                                     haptics.tick()
                                                     direction = if (v < 0) 1 else -1
-                                                    if (v < 0) vm.playback.next() else vm.playback.previous()
+                                                    if (v < 0) doNext() else doPrev()
                                                 }
                                                 swipe.animateTo(0f, Motion.gentle)
                                             }
@@ -289,7 +301,7 @@ fun NowPlaying(
                     }
 
                     Spacer(Modifier.height(Space.md))
-                    Scrubber(progress, onSeek = { vm.playback.seekTo(it) })
+                    Scrubber(progress, onSeek = doSeek)
 
                     // Transport
                     Row(
@@ -300,12 +312,12 @@ fun NowPlaying(
                         IconButton(onClick = { haptics.tick(); vm.playback.toggleShuffle() }) {
                             ActiveIcon(Icons.Rounded.Shuffle, if (state.shuffle) "Shuffle on" else "Shuffle off", state.shuffle)
                         }
-                        IconButton(onClick = { haptics.tick(); direction = -1; vm.playback.previous() }, Modifier.size(56.dp)) {
+                        IconButton(onClick = { haptics.tick(); direction = -1; doPrev() }, Modifier.size(56.dp)) {
                             Icon(Icons.Rounded.SkipPrevious, "Previous", tint = GT.Text, modifier = Modifier.size(40.dp))
                         }
-                        PlayButton(state.playWhenReady, onClick = { vm.playback.togglePlay() }, size = 68.dp)
-                        IconButton(onClick = { haptics.tick(); direction = 1; vm.playback.next() }, Modifier.size(56.dp), enabled = state.upNext.isNotEmpty()) {
-                            Icon(Icons.Rounded.SkipNext, "Next", tint = if (state.upNext.isNotEmpty()) GT.Text else GT.TextTertiary, modifier = Modifier.size(40.dp))
+                        PlayButton(playing, onClick = doToggle, size = 68.dp)
+                        IconButton(onClick = { haptics.tick(); direction = 1; doNext() }, Modifier.size(56.dp), enabled = remote != null || state.upNext.isNotEmpty()) {
+                            Icon(Icons.Rounded.SkipNext, "Next", tint = if (remote != null || state.upNext.isNotEmpty()) GT.Text else GT.TextTertiary, modifier = Modifier.size(40.dp))
                         }
                         IconButton(onClick = { haptics.tick(); vm.playback.cycleRepeat() }) {
                             val mode = state.repeatMode
@@ -338,9 +350,20 @@ fun NowPlaying(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(Modifier.size(Space.touch), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Devices, null, tint = GT.Accent, modifier = Modifier.size(22.dp))
+                                Icon(
+                                    when {
+                                        remote != null -> Icons.Rounded.Computer
+                                        output.kind != com.ghosttunes.mobile.playback.OutputDevice.Kind.Speaker -> Icons.Rounded.Headphones
+                                        else -> Icons.Rounded.Devices
+                                    },
+                                    null, tint = GT.Accent, modifier = Modifier.size(22.dp),
+                                )
                             }
-                            Text("This phone", style = TypeScale.label, color = GT.Accent)
+                            Text(
+                                remote?.let { "Playing on ${it.pcName}" }
+                                    ?: if (output.kind == com.ghosttunes.mobile.playback.OutputDevice.Kind.Speaker) "This phone" else output.name,
+                                style = TypeScale.label, color = GT.Accent, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = { vm.share(track) }) { Icon(Icons.Rounded.Share, "Share", tint = GT.Text, modifier = Modifier.size(22.dp)) }

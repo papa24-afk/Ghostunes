@@ -87,6 +87,8 @@ export interface DesktopListenerOptions {
   getNowPlaying: () => HandoffSnapshot | null;
   onHandoff: (handoff: IncomingHandoff) => void;
   onRelease: () => void;
+  /** Phone acting as a remote. */
+  onCommand?: (command: { action: 'play' | 'pause' | 'toggle' | 'next' | 'previous' | 'seek'; position: number | null }) => void;
 }
 
 /** Desktop app: keeps an SSE stream open for handoffs and reports what it is playing every 2s. */
@@ -106,6 +108,16 @@ export function startDesktopHandoffListener(options: DesktopListenerOptions): ()
       }
     });
     source.addEventListener('release', () => options.onRelease());
+    source.addEventListener('command', (event: MessageEvent) => {
+      try {
+        options.onCommand?.(JSON.parse(event.data));
+      } catch (err) {
+        console.warn('[Handoff] Bad command event:', err);
+      }
+      // Tell the phone the new state right away instead of waiting for the next 2 s report.
+      setTimeout(sendPresence, 250);
+      setTimeout(sendPresence, 900);
+    });
     source.addEventListener('ready', () => sendPresence());
     // EventSource reconnects on its own; if the server closed it for good, retry.
     source.onerror = () => {

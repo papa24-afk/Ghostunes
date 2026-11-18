@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -238,7 +239,18 @@ fun DeviceSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     GtSheet(onDismiss) {
         Column(Modifier.navigationBarsPadding().padding(bottom = Space.md)) {
             SheetTitle("Connect to a device")
-            DeviceRow(Icons.Rounded.PhoneAndroid, "This phone", "Playing here", active = true, enabled = true) {}
+            val remote by vm.remote.collectAsState()
+            val output by vm.output.collectAsState()
+            val onHeadset = output.kind != com.ghosttunes.mobile.playback.OutputDevice.Kind.Speaker
+            DeviceRow(
+                if (onHeadset) Icons.Rounded.Headphones else Icons.Rounded.PhoneAndroid,
+                if (onHeadset) output.name else "This phone",
+                if (remote != null) "Continue here" else if (onHeadset) "This phone" else "Playing here",
+                active = remote == null, enabled = true,
+            ) {
+                vm.continueOnPhone()
+                onDismiss()
+            }
             val d = desktop
             val (subtitle, online) = when {
                 d == null -> "Looking for your PC…" to false
@@ -249,7 +261,8 @@ fun DeviceSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                     (if (np != null && np.isPlaying) "Playing ${np.track.title}" else "Ready") to true
                 }
             }
-            DeviceRow(Icons.Rounded.Computer, "Ghosttunes on your PC", subtitle, active = false, enabled = online) {
+            val pcName = remote?.pcName ?: d?.getOrNull()?.name?.ifBlank { null } ?: "Your PC"
+            DeviceRow(Icons.Rounded.Computer, pcName, if (remote != null) "Playing here" else subtitle, active = remote != null, enabled = online || remote != null) {
                 vm.handoff()
                 onDismiss()
             }

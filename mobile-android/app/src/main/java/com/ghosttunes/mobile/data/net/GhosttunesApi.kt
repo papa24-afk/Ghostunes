@@ -68,4 +68,7 @@ interface GhosttunesApi {
     @POST("api/handoff/push") suspend fun push(@Body body: PushRequest): Response<PushResponse>
     @GET("api/handoff/{id}") suspend fun handoffStatus(@Path("id") id: String): HandoffStatusResponse
     @POST("api/handoff/release") suspend fun release(@Body body: ReleaseRequest): Response<ResponseBody>
+    @POST("api/handoff/command") suspend fun command(@Body body: com.ghosttunes.mobile.data.model.CommandRequest): Response<ResponseBody>
+    /** Warms a track on the PC's own server (used before a flick, so the PC starts instantly). */
+    @GET("api/stream/{id}/prepare") suspend fun warmOnPc(@Path("id") id: String): Response<ResponseBody>
 }

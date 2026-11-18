@@ -17,7 +17,7 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class UserPlaylist(val id: Long, val name: String, val count: Int, val cover: Track?, val updatedAt: Long)
+data class UserPlaylist(val id: Long, val name: String, val count: Int, val cover: Track?, val updatedAt: Long, val customCover: String? = null)
 data class FollowedArtist(val id: String, val name: String, val avatar: String)
 
 @Singleton
@@ -43,10 +43,12 @@ class LibraryRepository @Inject constructor(
     }
 
     val playlists: Flow<List<UserPlaylist>> = dao.playlists().map { list ->
-        list.map { UserPlaylist(it.id, it.name, it.count, it.firstJson?.let(::decode), it.updatedAt) }
+        list.map { UserPlaylist(it.id, it.name, it.count, it.firstJson?.let(::decode), it.updatedAt, it.cover) }
     }
 
     fun playlistName(id: Long): Flow<String?> = dao.playlist(id).map { it?.name }
+    fun playlistCover(id: Long): Flow<String?> = dao.playlist(id).map { it?.cover }
+    suspend fun setCover(id: Long, cover: String?) = dao.setCover(id, cover, System.currentTimeMillis())
     fun playlistTracks(id: Long): Flow<List<Track>> = dao.playlistTracks(id).map { l -> l.mapNotNull { decode(it.json) } }
 
     suspend fun createPlaylist(name: String): Long {
@@ -55,8 +57,9 @@ class LibraryRepository @Inject constructor(
     }
 
     /** Creates a playlist holding [tracks] in order. Returns its id. */
-    suspend fun importPlaylist(name: String, tracks: List<Track>): Long {
+    suspend fun importPlaylist(name: String, tracks: List<Track>, cover: String? = null): Long {
         val id = createPlaylist(name)
+        if (!cover.isNullOrBlank()) dao.setCover(id, cover, System.currentTimeMillis())
         tracks.forEachIndexed { i, t -> dao.addToPlaylist(PlaylistTrackEntity(id, t.id, i, encode(t))) }
         dao.touchPlaylist(id, System.currentTimeMillis())
         return id

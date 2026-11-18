@@ -88,10 +88,7 @@ export function HandoffArrival({ animation, onDone }: { animation: HandoffAnimat
           }}
         />
         <div className="mt-8 text-center" style={{ animation: 'gtText 420ms 300ms ease both' }}>
-          <div className="text-[13px] font-semibold tracking-[0.18em] uppercase text-white/60">
-            {arriving ? `Playing from ${deviceName}` : `Moved to ${deviceName}`}
-          </div>
-          <div className="mt-2 text-3xl font-bold text-white max-w-[70vw] truncate">{track.title}</div>
+          <div className="text-3xl font-bold text-white max-w-[70vw] truncate">{track.title}</div>
           <div className="mt-1 text-lg text-white/70 max-w-[70vw] truncate">{track.artist}</div>
         </div>
       </div>

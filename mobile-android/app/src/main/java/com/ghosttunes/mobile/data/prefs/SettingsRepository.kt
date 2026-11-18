@@ -20,7 +20,7 @@ import kotlinx.coroutines.runBlocking
 private val Context.dataStore by preferencesDataStore("settings")
 
 enum class FlickSensitivity(val scale: Float, val label: String) {
-    Low(1.2f, "Low"), Medium(1.0f, "Medium"), High(0.85f, "High")
+    Low(1.3f, "Low"), Medium(1.0f, "Medium"), High(0.8f, "High")
 }
 
 data class AppSettings(
@@ -40,6 +40,8 @@ data class AppSettings(
     val debugUnlocked: Boolean = false,
     /** Stream and search straight from YouTube on the phone (true) or through the PC's server. */
     val streamFromPhone: Boolean = true,
+    /** Transfer when the phone is brought close to the PC (Bluetooth beacon). */
+    val bringClose: Boolean = true,
 )
 
 class SettingsRepository(private val context: Context, scope: CoroutineScope) {
@@ -59,6 +61,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         val position = longPreferencesKey("queue_position")
         val debug = booleanPreferencesKey("debug_unlocked")
         val phone = booleanPreferencesKey("stream_from_phone")
+        val close = booleanPreferencesKey("bring_close")
     }
 
     private fun Preferences.toSettings() = AppSettings(
@@ -77,6 +80,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         savedPositionMs = this[K.position] ?: 0,
         debugUnlocked = this[K.debug] ?: false,
         streamFromPhone = this[K.phone] ?: true,
+        bringClose = this[K.close] ?: true,
     )
 
     /** Read once at startup so the first request already knows the PC address. */
@@ -96,6 +100,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     suspend fun setAutoplay(v: Boolean) = context.dataStore.edit { it[K.autoplay] = v }
     suspend fun setLibraryGrid(v: Boolean) = context.dataStore.edit { it[K.libGrid] = v }
     suspend fun setLibrarySort(v: Int) = context.dataStore.edit { it[K.libSort] = v }
+    suspend fun setBringClose(v: Boolean) = context.dataStore.edit { it[K.close] = v }
     suspend fun setStreamFromPhone(v: Boolean) = context.dataStore.edit { it[K.phone] = v }
     suspend fun unlockDebug() = context.dataStore.edit { it[K.debug] = true }
 

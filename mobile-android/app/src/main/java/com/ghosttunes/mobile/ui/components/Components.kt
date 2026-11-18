@@ -423,13 +423,15 @@ fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
 /** "Sending to PC…" → "Now playing on your PC". Top-center, animated. */
 @Composable
 fun HandoffPill(status: HandoffStatus?, modifier: Modifier = Modifier) {
+    // Success is shown by the transfer animation; only problems get a message.
+    val shown = status as? HandoffStatus.Failed
     AnimatedVisibility(
-        visible = status != null,
+        visible = shown != null,
         enter = slideInVertically { -it } + fadeIn(),
         exit = slideOutVertically { -it } + fadeOut(),
         modifier = modifier,
     ) {
-        val s = status ?: return@AnimatedVisibility
+        val s: HandoffStatus = shown ?: return@AnimatedVisibility
         val dot = when (s) {
             is HandoffStatus.Done -> GT.Success
             is HandoffStatus.Failed -> GT.Error
@@ -455,3 +457,26 @@ fun HandoffPill(status: HandoffStatus?, modifier: Modifier = Modifier) {
         }
     }
 }
+
+// ---------------------------------------------------------------- playlist covers
+
+/** A stored cover (file on this phone or an https URL) as an image model. */
+fun coverModel(cover: String): Any =
+    if (cover.startsWith("/")) java.io.File(cover) else ArtworkUrls.sized(cover, ArtworkUrls.Size.Hero)
+
+/** Copies a picked image into the app (max 1000 px, JPEG) and returns its path. */
+fun saveCoverImage(context: android.content.Context, uri: android.net.Uri, playlistId: Long): String? = runCatching {
+    val resolver = context.contentResolver
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1000) sample *= 2
+    val bitmap = resolver.openInputStream(uri)?.use {
+        android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+    } ?: return null
+    val dir = java.io.File(context.filesDir, "covers").apply { mkdirs() }
+    dir.listFiles { f -> f.name.startsWith("pl_${playlistId}_") }?.forEach { it.delete() }
+    val file = java.io.File(dir, "pl_${playlistId}_${System.currentTimeMillis()}.jpg")
+    file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it) }
+    file.absolutePath
+}.getOrNull()

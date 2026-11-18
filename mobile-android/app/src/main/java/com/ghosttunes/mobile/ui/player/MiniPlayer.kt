@@ -66,8 +66,11 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
 ) {
     val state by vm.player.collectAsState()
-    val progress by vm.progress.collectAsState()
-    val track = state.current ?: return
+    val localProgress by vm.progress.collectAsState()
+    val remote by vm.remote.collectAsState()
+    val progress = rememberRemoteProgress(remote) ?: localProgress
+    val track = remote?.track ?: state.current ?: return
+    val playing = remote?.isPlaying ?: state.playWhenReady
     val art = trackArtModel(track, ArtworkUrls.Size.Hero)
     val color by rememberArtColor(art)
     val haptics = rememberHaptics()
@@ -89,7 +92,7 @@ fun MiniPlayer(
                             val v = offset.value
                             if (abs(v) > threshold) {
                                 haptics.tick()
-                                if (v < 0) vm.playback.next() else vm.playback.previous()
+                                if (v < 0) { if (remote != null) vm.remoteNext() else vm.playback.next() } else { if (remote != null) vm.remotePrevious() else vm.playback.previous() }
                             }
                             offset.animateTo(0f, Motion.gentle)
                         }
@@ -124,16 +127,16 @@ fun MiniPlayer(
                     track.title, style = TypeScale.bodyLarge.copy(fontSize = TypeScale.body.fontSize), color = GT.Text,
                     maxLines = 1, modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000),
                 )
-                Text(track.artist, style = TypeScale.body.copy(fontSize = TypeScale.label.fontSize), color = GT.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(remote?.let { "Playing on ${it.pcName}" } ?: track.artist, style = TypeScale.body.copy(fontSize = TypeScale.label.fontSize), color = if (remote != null) GT.Accent else GT.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Box(Modifier.size(Space.touch), contentAlignment = Alignment.Center) {
-                if (state.isBuffering && state.playWhenReady) {
+                if (remote == null && state.isBuffering && state.playWhenReady) {
                     CircularProgressIndicator(Modifier.size(22.dp), color = GT.Text, strokeWidth = 2.dp)
                 } else {
-                    IconButton(onClick = { haptics.confirm(); vm.playback.togglePlay() }) {
+                    IconButton(onClick = { haptics.confirm(); if (remote != null) vm.remoteToggle() else vm.playback.togglePlay() }) {
                         Icon(
-                            if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            if (state.playWhenReady) "Pause" else "Play", tint = GT.Text, modifier = Modifier.size(30.dp),
+                            if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            if (playing) "Pause" else "Play", tint = GT.Text, modifier = Modifier.size(30.dp),
                         )
                     }
                 }

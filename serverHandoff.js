@@ -1,6 +1,7 @@
 // Tap / flick to transfer: moves playback between the phone and the desktop app.
 // The server runs on the PC, so every timestamp here is PC time.
 import crypto from 'crypto';
+import os from 'os';
 
 const PRESENCE_TTL_MS = 8000;
 const HANDOFF_TTL_MS = 2 * 60 * 1000;
@@ -142,7 +143,19 @@ export function registerHandoffRoutes(app) {
       const limit = current.nowPlaying.track.durationSeconds;
       nowPlaying = { ...current.nowPlaying, position: limit ? Math.min(position, limit) : position };
     }
-    res.json({ online, nowPlaying, serverTime: now });
+    res.json({ online, nowPlaying, serverTime: now, name: os.hostname() });
+  });
+
+  // Phone as a remote: play / pause / next / previous / seek on the desktop.
+  app.post('/api/handoff/command', (req, res) => {
+    const action = String(req.body?.action || '');
+    if (!['play', 'pause', 'toggle', 'next', 'previous', 'seek'].includes(action)) {
+      return res.status(400).json({ error: 'invalid_action' });
+    }
+    const position = Number(req.body?.position);
+    if (!desktopClients.size) return res.status(409).json({ error: 'desktop_offline' });
+    const delivered = broadcast('command', { action, position: Number.isFinite(position) ? position : null, serverTime: Date.now() });
+    res.json({ ok: true, delivered });
   });
 
   // Phone tells the desktop to fade out (after pull, or after a timed-out push).

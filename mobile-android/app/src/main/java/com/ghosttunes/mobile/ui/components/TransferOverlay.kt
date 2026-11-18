@@ -114,14 +114,6 @@ fun TransferOverlay(coordinator: HandoffCoordinator) {
                         clip = true
                     },
             ) { Artwork(art, null, Modifier.fillMaxSize(), RoundedCornerShape(Radii.hero)) }
-            Spacer(Modifier.height(28.dp))
-            Column(Modifier.graphicsLayer { this.alpha = label.value }, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    if (e is HandoffCoordinator.Transfer.ToPc) "Playing on your PC" else "Playing on this phone",
-                    style = TypeScale.title, color = GT.Text,
-                )
-                Text(e.track.title, style = TypeScale.body, color = GT.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
         }
     }
 }

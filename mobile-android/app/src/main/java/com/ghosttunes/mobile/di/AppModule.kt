@@ -66,7 +66,7 @@ object AppModule {
         com.ghosttunes.mobile.data.direct.PlaylistImporter(direct, json)
 
     @Provides @Singleton fun database(context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "ghosttunes.db").build()
+        Room.databaseBuilder(context, AppDatabase::class.java, "ghosttunes.db").addMigrations(AppDatabase.MIGRATION_1_2).build()
 
     @Provides fun libraryDao(db: AppDatabase): LibraryDao = db.library()
     @Provides fun downloadDao(db: AppDatabase): DownloadDao = db.downloads()

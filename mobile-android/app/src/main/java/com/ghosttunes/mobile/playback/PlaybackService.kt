@@ -55,6 +55,9 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var flickMonitor: FlickMonitor
     @Inject lateinit var json: Json
     @Inject lateinit var direct: com.ghosttunes.mobile.data.direct.DirectSource
+    @Inject lateinit var locator: com.ghosttunes.mobile.data.net.PcLocator
+    @Inject lateinit var beacon: com.ghosttunes.mobile.handoff.ProximityBeacon
+    @Inject lateinit var api: com.ghosttunes.mobile.data.net.GhosttunesApi
     private var retriedId: String? = null
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -122,7 +125,7 @@ class PlaybackService : MediaSessionService() {
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         scope.launch {
-            settings.settings.map { Triple(it.flickEnabled, it.flickInBackground, it.flickSensitivity) }
+            settings.settings.map { listOf(it.flickEnabled, it.flickInBackground, it.flickSensitivity, it.bringClose) }
                 .distinctUntilChanged()
                 .collect { updateBackgroundFlick() }
         }
@@ -141,6 +144,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         saveQueue()
         flickSensor?.stop()
+        beacon.hold("playing", false)
         runCatching { unregisterReceiver(screenReceiver) }
         session?.run {
             player.release()
@@ -175,6 +179,7 @@ class PlaybackService : MediaSessionService() {
             prefetchNext()
             maybeExtendWithRadio()
             saveQueue()
+            warmOnPc(track.id)
         }
 
         override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
@@ -234,6 +239,18 @@ class PlaybackService : MediaSessionService() {
         scope.launch { music.prepare(id) }
     }
 
+    /**
+     * Have the PC get this song ready too, so a flick starts it there almost instantly.
+     * Only while the PC has been reachable recently; fire-and-forget.
+     */
+    private fun warmOnPc(id: String) {
+        scope.launch(Dispatchers.IO) {
+            val fresh = android.os.SystemClock.elapsedRealtime() - locator.lastOkAt < 10 * 60_000L
+            if (!fresh && runCatching { locator.ensure(allowScan = false) }.getOrNull() == null) return@launch
+            runCatching { api.warmOnPc(id) }
+        }
+    }
+
     /** Smart radio: when we're on the last track, append recommendations so music never stops. */
     private fun maybeExtendWithRadio() {
         if (!settings.current.autoplay || player.repeatMode != Player.REPEAT_MODE_OFF) return
@@ -266,6 +283,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun updateBackgroundFlick() {
         val s = settings.current
+        beacon.hold("playing", s.bringClose && player.isPlaying && screenOn)
         val shouldRun = s.flickEnabled && s.flickInBackground && player.isPlaying && screenOn
         if (shouldRun) {
             val sensor = flickSensor ?: FlickSensor(this, flickMonitor) { handoff.trigger("flick") }.also { flickSensor = it }

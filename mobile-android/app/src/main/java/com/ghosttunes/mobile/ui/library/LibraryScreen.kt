@@ -140,7 +140,7 @@ fun LibraryScreen(vm: LibraryViewModel = hiltViewModel()) {
         list += LibItem("history", "Recently played", d.lastPlayed?.let { "Last: ${it.title}" } ?: "Nothing yet", null, Icons.Rounded.History, pinned = true) { it.nav.navigate(HistoryRoute) }
         val rest = mutableListOf<LibItem>()
         d.playlists.forEach { p ->
-            rest += LibItem("pl-${p.id}", p.name, "Playlist · ${p.count} songs", p.cover, kind = LibFilter.Playlists, sortTime = p.updatedAt) { it.nav.navigate(UserPlaylistRoute(p.id)) }
+            rest += LibItem("pl-${p.id}", p.name, "Playlist · ${p.count} songs", p.customCover?.let { com.ghosttunes.mobile.ui.components.coverModel(it) } ?: p.cover, kind = LibFilter.Playlists, sortTime = p.updatedAt) { it.nav.navigate(UserPlaylistRoute(p.id)) }
         }
         d.followed.forEach { a ->
             rest += LibItem("ar-${a.id}", a.name, "Artist", ArtworkUrls.sized(a.avatar, ArtworkUrls.Size.Card), circle = true, kind = LibFilter.Artists) { it.nav.navigate(ArtistRoute(a.id, a.name)) }

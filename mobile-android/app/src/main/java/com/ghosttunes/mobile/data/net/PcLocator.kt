@@ -31,12 +31,17 @@ class PcLocator @Inject constructor(
 ) {
     private val lock = Mutex()
 
+    /** elapsedRealtime of the last successful contact with the PC (0 = never). */
+    @Volatile var lastOkAt: Long = 0
+        private set
+
     /** Returns a reachable base URL (saving it if it changed), or null if no PC is on this network. */
     suspend fun ensure(allowScan: Boolean = true): String? = lock.withLock {
         val current = config.baseUrl.value
-        if (music.checkServer(current, 2000)) return current
+        if (music.checkServer(current, 2000)) { lastOkAt = android.os.SystemClock.elapsedRealtime(); return current }
         val found = broadcast().firstOrNull { music.checkServer(it, 2000) }
             ?: if (allowScan) withTimeoutOrNull(12_000) { discovery.scan().first { it.found.isNotEmpty() }.found.first() } else null
+        if (found != null) lastOkAt = android.os.SystemClock.elapsedRealtime()
         if (found != null && found != current) {
             config.set(found)
             music.clearCache()

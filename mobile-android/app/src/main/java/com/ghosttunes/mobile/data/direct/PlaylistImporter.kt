@@ -31,9 +31,9 @@ class PlaylistImporter(private val direct: DirectSource, private val json: Json)
 
     data class Source(val title: String, val artist: String, val durationSeconds: Int)
 
-    data class Resolved(val platform: Platform, val title: String, val author: String, val sources: List<Source>, val ready: List<Track> = emptyList())
+    data class Resolved(val platform: Platform, val title: String, val author: String, val sources: List<Source>, val ready: List<Track> = emptyList(), val cover: String? = null)
 
-    data class Result(val title: String, val platform: Platform, val tracks: List<Track>, val total: Int, val unmatched: List<Source>)
+    data class Result(val title: String, val platform: Platform, val tracks: List<Track>, val total: Int, val unmatched: List<Source>, val cover: String? = null)
 
     class ImportException(message: String) : IOException(message)
 
@@ -90,8 +90,9 @@ class PlaylistImporter(private val direct: DirectSource, private val json: Json)
             val title = t["title"].str() ?: return@mapNotNull null
             Source(title, t["subtitle"].str().orEmpty(), ((t["duration"].num() ?: 0) / 1000).toInt())
         }
+        val cover = entity["coverArt"]["sources"].arr()?.maxByOrNull { it["width"].num() ?: 0 }?.get("url").str()
         return Resolved(Platform.Spotify, entity["name"].str() ?: entity["title"].str() ?: "Spotify playlist",
-            entity["authors"].arr()?.mapNotNull { it["name"].str() }?.joinToString().orEmpty(), sources)
+            entity["authors"].arr()?.mapNotNull { it["name"].str() }?.joinToString().orEmpty(), sources, cover = cover)
     }
 
     private fun deezer(link: String): Resolved {
@@ -117,7 +118,8 @@ class PlaylistImporter(private val direct: DirectSource, private val json: Json)
             add(page["data"].arr())
             next = page["next"].str()
         }
-        return Resolved(Platform.Deezer, root["title"].str() ?: "Deezer playlist", root["creator"]["name"].str().orEmpty(), sources)
+        return Resolved(Platform.Deezer, root["title"].str() ?: "Deezer playlist", root["creator"]["name"].str().orEmpty(), sources,
+            cover = root["picture_xl"].str() ?: root["picture_big"].str())
     }
 
     private fun apple(link: String): Resolved {
@@ -135,13 +137,14 @@ class PlaylistImporter(private val direct: DirectSource, private val json: Json)
                 Source(name, t["artistName"].str().orEmpty(), ((t["duration"].num() ?: 0) / 1000).toInt())
             }
         }
-        return Resolved(Platform.Apple, title, "Apple Music", sources)
+        val cover = Regex("""<meta property="og:image" content="([^"]+)""").find(html)?.groupValues?.get(1)
+        return Resolved(Platform.Apple, title, "Apple Music", sources, cover = cover)
     }
 
     private fun youtube(link: String): Resolved {
         val id = Regex("""[?&]list=([\w-]+)""").find(link)?.groupValues?.get(1) ?: throw ImportException("That YouTube link isn't a playlist.")
         val page = direct.playlist(id)
-        return Resolved(Platform.YouTube, page.title, page.author, emptyList(), page.tracks)
+        return Resolved(Platform.YouTube, page.title, page.author, emptyList(), page.tracks, cover = page.thumbnail.ifBlank { null })
     }
 
     // ------------------------------------------------------------------ matching
@@ -177,7 +180,7 @@ class PlaylistImporter(private val direct: DirectSource, private val json: Json)
     suspend fun match(resolved: Resolved, onProgress: (done: Int, total: Int) -> Unit): Result = withContext(Dispatchers.IO) {
         if (resolved.ready.isNotEmpty()) {
             onProgress(resolved.ready.size, resolved.ready.size)
-            return@withContext Result(resolved.title, resolved.platform, resolved.ready, resolved.ready.size, emptyList())
+            return@withContext Result(resolved.title, resolved.platform, resolved.ready, resolved.ready.size, emptyList(), resolved.cover)
         }
         val total = resolved.sources.size
         if (total == 0) throw ImportException("This playlist has no songs, or it's private.")
@@ -199,6 +202,6 @@ class PlaylistImporter(private val direct: DirectSource, private val json: Json)
         val tracks = matches.filterNotNull().distinctBy { it.id }
         val unmatched = resolved.sources.filterIndexed { i, _ -> matches[i] == null }
         if (tracks.isEmpty()) throw ImportException("Couldn't match any songs from this playlist.")
-        Result(resolved.title, resolved.platform, tracks, total, unmatched)
+        Result(resolved.title, resolved.platform, tracks, total, unmatched, resolved.cover)
     }
 }

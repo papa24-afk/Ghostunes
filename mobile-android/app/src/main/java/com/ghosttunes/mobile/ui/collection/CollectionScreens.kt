@@ -11,6 +11,8 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.HideImage
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -111,6 +113,7 @@ class CollectionViewModel @Inject constructor(
     }
 
     fun rename(id: Long, name: String) = viewModelScope.launch { library.renamePlaylist(id, name) }
+    fun setCover(id: Long, cover: String?) = viewModelScope.launch { library.setCover(id, cover) }
     fun delete(id: Long) = viewModelScope.launch { library.deletePlaylist(id) }
     fun clearHistory() = viewModelScope.launch { library.clearHistory() }
     fun removeAllDownloads() = viewModelScope.launch { downloads.removeAll() }
@@ -198,13 +201,24 @@ fun DownloadsScreen(vm: CollectionViewModel = hiltViewModel()) {
 @Composable
 fun UserPlaylistScreen(id: Long, vm: CollectionViewModel = hiltViewModel()) {
     val name by remember(id) { vm.library.playlistName(id) }.collectAsState(initial = null)
+    val customCover by remember(id) { vm.library.playlistCover(id) }.collectAsState(initial = null)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val pickCover = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val path = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.ghosttunes.mobile.ui.components.saveCoverImage(context, uri, id) }
+            if (path != null) vm.setCover(id, path)
+        }
+    }
     val tracks by remember(id) { vm.library.playlistTracks(id) }.collectAsState(initial = null)
     val actions = LocalActions.current
     var menu by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val list = tracks.orEmpty()
-    val cover = list.firstOrNull()?.let { trackArtModel(it, ArtworkUrls.Size.Hero) }
+    val cover = customCover?.let { com.ghosttunes.mobile.ui.components.coverModel(it) } ?: list.firstOrNull()?.let { trackArtModel(it, ArtworkUrls.Size.Hero) }
     CollectionScaffold(
         name?.let { CollectionHeader(it, "Your playlist", "${list.size} songs", cover, glyph = if (cover == null) ({ GlyphTile(Icons.Rounded.Edit) }) else null) },
         list, loading = tracks == null, error = null, onRetry = {}, from = name.orEmpty(), playlistId = id,
@@ -213,6 +227,11 @@ fun UserPlaylistScreen(id: Long, vm: CollectionViewModel = hiltViewModel()) {
     )
     if (menu) GtSheet({ menu = false }) {
         Column(Modifier.navigationBarsPadding().padding(bottom = Space.md)) {
+            MenuItem(Icons.Rounded.Image, "Change cover") {
+                menu = false
+                pickCover.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+            if (customCover != null) MenuItem(Icons.Rounded.HideImage, "Remove cover") { menu = false; vm.setCover(id, null) }
             MenuItem(Icons.Rounded.Edit, "Rename") { menu = false; renaming = true }
             MenuItem(Icons.Rounded.Delete, "Delete playlist") { menu = false; deleting = true }
         }

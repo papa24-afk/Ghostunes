@@ -42,8 +42,17 @@ class MainViewModel @Inject constructor(
     private val handoff: HandoffCoordinator,
     private val sleep: SleepTimer,
     private val api: com.ghosttunes.mobile.data.net.GhosttunesApi,
+    audioOutput: com.ghosttunes.mobile.playback.AudioOutput,
 ) : ViewModel() {
+    /** Bluetooth headset / speaker, headphones, or the phone speaker. */
+    val output: StateFlow<com.ghosttunes.mobile.playback.OutputDevice> = audioOutput.current
     val coordinator: HandoffCoordinator get() = handoff
+    val remote: StateFlow<com.ghosttunes.mobile.handoff.RemoteState?> = handoff.remote
+    fun remoteToggle() = handoff.remoteToggle()
+    fun remoteNext() = handoff.remoteNext()
+    fun remotePrevious() = handoff.remotePrevious()
+    fun remoteSeek(ms: Long) = handoff.remoteSeek(ms / 1000.0)
+    fun continueOnPhone() = handoff.continueOnPhone()
     val player: StateFlow<PlayerState> = playback.state
     val progress: StateFlow<Progress> = playback.progress
     val likedIds: StateFlow<Set<String>> = library.likedIds

@@ -2135,6 +2135,16 @@ export function App() {
           finishIncomingHandoff('failed', String(err?.message || err));
         });
       },
+      onCommand: ({ action, position }) => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        if (action === 'play' && audio.paused) audio.play().catch(() => {});
+        else if (action === 'pause' && !audio.paused) audio.pause();
+        else if (action === 'toggle') { if (audio.paused) audio.play().catch(() => {}); else audio.pause(); }
+        else if (action === 'next') handleNextRef.current();
+        else if (action === 'previous') handlePrevRef.current();
+        else if (action === 'seek' && typeof position === 'number' && Number.isFinite(position)) audio.currentTime = Math.max(0, position);
+      },
       onRelease: () => {
         const audio = audioRef.current;
         const track = currentTrackRef.current;
@@ -2694,7 +2704,11 @@ export function App() {
       />
 
       {/* Tap / flick to transfer: arrival / departure animation */}
-      <HandoffArrival animation={handoffAnimation} onDone={() => setHandoffAnimation(null)} />
+      <HandoffArrival animation={handoffAnimation} onDone={() => {
+        // After music arrives from the phone, land on the full-screen lyrics for that song.
+        if (handoffAnimation?.direction === 'in') setShowLyrics(true);
+        setHandoffAnimation(null);
+      }} />
 
       {/* Tap / flick to transfer status pill */}
       {handoffToast && (

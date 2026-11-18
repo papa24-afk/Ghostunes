@@ -172,7 +172,10 @@ data class PushResponse(val id: String, val stampedAt: Long = 0)
 data class HandoffStatusResponse(val id: String = "", val status: String = "pending", val error: String? = null)
 
 @Serializable
-data class DesktopState(val online: Boolean = false, val nowPlaying: HandoffSnapshot? = null, val serverTime: Long = 0)
+data class DesktopState(val online: Boolean = false, val nowPlaying: HandoffSnapshot? = null, val serverTime: Long = 0, val name: String = "")
+
+@Serializable
+data class CommandRequest(val action: String, val position: Double? = null)
 
 @Serializable
 data class ReleaseRequest(val reason: String)

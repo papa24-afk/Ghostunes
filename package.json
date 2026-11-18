@@ -48,6 +48,8 @@
       "serverArtwork.js",
       "serverHandoff.js",
       "serverMobile.js",
+      "serverProximity.js",
+      "proximity-watch.cs",
       "node_modules/**/*",
       "serverSmartRadio.js"
     ],
@@ -62,6 +64,8 @@
       "serverArtwork.js",
       "serverHandoff.js",
       "serverMobile.js",
+      "serverProximity.js",
+      "proximity-watch.cs",
       "package.json",
       "serverSmartRadio.js"
     ],
