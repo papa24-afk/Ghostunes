@@ -115,13 +115,13 @@ class FlickDetectorTest {
     @Test fun `a flick fires from raw accelerometer data via the gravity filter`() =
         assertEquals(1, count(withGravity(concat(still(1500), flick(), still(1000))), raw = true))
 
-    @Test fun `5s cooldown, then fires again`() {
-        assertEquals(1, count(concat(still(800), flick(), still(1500), flick(), still(800))))
-        assertEquals(2, count(concat(still(800), flick(), still(5600), flick(), still(800))))
+    @Test fun `short cooldown, then fires again`() {
+        assertEquals(1, count(concat(still(800), flick(), still(1200), flick(), still(800))))
+        assertEquals(2, count(concat(still(800), flick(), still(3000), flick(), still(800))))
     }
 
     @Test fun `sensitivity scales the threshold`() {
-        val gentle = concat(still(800), flick(push = 12.5, brake = 8.0), still(800))
+        val gentle = concat(still(800), flick(push = 9.8, brake = 6.8), still(800))
         assertEquals("high", 1, count(gentle, config = FlickConfig().scaled(0.8f)))
         assertEquals("medium", 1, count(gentle, config = FlickConfig().scaled(1.0f)))
         assertEquals("low", 0, count(gentle, config = FlickConfig().scaled(1.3f)))
@@ -142,7 +142,26 @@ class FlickDetectorTest {
         doubleArrayOf(noise(0.8), v + noise(0.8), noise(0.8))
     }, still(800))))
 
-    @Test fun `a gentle movement below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 8.0, brake = 5.0), still(800))))
+    @Test fun `a gentle movement below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 6.0, brake = 4.0), still(800))))
+
+    @Test fun `a tiny left-right wiggle fires fast`() {
+        for (axis in 0..2) {
+            val trace = concat(still(800), gen(600) { t ->
+                val v = pulse(t, 0, 120, 8.5) + pulse(t, 120, 120, -8.5) + pulse(t, 240, 120, 8.5) + pulse(t, 360, 120, -8.0)
+                doubleArrayOf(noise(0.6), noise(0.6), noise(0.6)).also { it[axis] += v }
+            }, still(800))
+            val d = FlickDetector()
+            d.gravityZ = 9.8f
+            val firedAt = trace.firstOrNull { d.addLinear(it.x, it.y, it.z, it.t) }?.t
+            assertEquals("axis $axis fires", true, firedAt != null)
+            // Third swing peaks at ~300 ms into the wiggle (800 ms of still before it).
+            assertEquals("axis $axis fast", true, firedAt!! - 800 <= 320)
+        }
+    }
+
+    @Test fun `a slow sway does not fire`() = assertEquals(0, count(concat(still(800), gen(2400) { t ->
+        doubleArrayOf(noise(0.6), 7.5 * sin(2 * PI * t / 1200.0) + noise(0.6), noise(0.6))
+    }, still(800))))
 
     @Test fun `a diagonal flick (phone held tilted) fires`() = assertEquals(1, count(concat(still(800), gen(500) { t ->
         val v = pulse(t, 0, 140, 16.0) + pulse(t, 140, 160, -11.0)

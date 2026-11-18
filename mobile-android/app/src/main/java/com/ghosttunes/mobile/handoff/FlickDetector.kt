@@ -13,21 +13,33 @@ import kotlin.math.sqrt
  */
 data class FlickConfig(
     /** Peak linear acceleration of the push, m/s². */
-    val pushThreshold: Float = 11f,
+    val pushThreshold: Float = 9f,
     /** Braking along the opposite direction, m/s². */
-    val brakeThreshold: Float = 7f,
+    val brakeThreshold: Float = 6f,
     /** Braking must arrive within this long after the push starts. */
     val brakeWindowMs: Long = 400,
     /** The push must stay strong this long (rejects impacts like setting it on a table)... */
     val minPushMs: Long = 30,
     /** ...but not longer than this (a flick is short; lifting or carrying is not). */
-    val maxPushMs: Long = 220,
+    val maxPushMs: Long = 180,
     /** A flick stops abruptly: braking must start within this long after the push ends. */
-    val brakeGapMs: Long = 90,
+    val brakeGapMs: Long = 110,
     /** Braking must point back along the push: cosine between them ≤ this. */
     val oppositeCos: Float = -0.6f,
     /** No further flicks for this long after one fires. */
-    val cooldownMs: Long = 5_000,
+    val cooldownMs: Long = 2_500,
+    /**
+     * Small shake: quick left-right (or back-and-forth) swings, each at least [shakeThreshold],
+     * alternating direction. Fires on the [shakeSwings]th swing, so it's instant.
+     */
+    val shakeThreshold: Float = 6.5f,
+    val shakeSwings: Int = 3,
+    /** A swing must start at least this long after the previous one started (rejects impact ringing)... */
+    val shakeMinGapMs: Long = 60,
+    /** ...and within this long after the previous one ended (rejects walking / slow sways). */
+    val shakeMaxGapMs: Long = 320,
+    /** A single swing longer than this is a slow movement (picking the phone up), not a shake. */
+    val shakeMaxSwingMs: Long = 170,
     /**
      * The phone must be fairly steady before the push (rejects walking, running, pockets):
      * in the [quietWindowMs] ending [quietGapMs] before the push, no sample above
@@ -40,7 +52,7 @@ data class FlickConfig(
     /** Low-pass factor for estimating gravity from raw accelerometer data (~100 Hz). */
     val gravityAlpha: Float = 0.97f,
 ) {
-    fun scaled(scale: Float) = copy(pushThreshold = pushThreshold * scale, brakeThreshold = brakeThreshold * scale)
+    fun scaled(scale: Float) = copy(pushThreshold = pushThreshold * scale, brakeThreshold = brakeThreshold * scale, shakeThreshold = shakeThreshold * scale)
 }
 
 class FlickDetector(var config: FlickConfig = FlickConfig()) {
@@ -58,6 +70,12 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
     private val dir = FloatArray(3)
     private var peak = 0f
 
+    // Current shake candidate.
+    private var swings = 0
+    private val swingDir = FloatArray(3)
+    private var swingStartedAt = 0L
+    private var swingLastAt = 0L
+
     /** Proximity sensor reads "near" (pocket, bag, face). */
     var proximityNear: Boolean = false
     /** Latest gravity along the screen normal (+9.8 face up, -9.8 face down). Null if unknown. */
@@ -72,6 +90,7 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         gravity = null
         firstSampleAt = -1L
         pushing = false
+        swings = 0
     }
 
     /** Linear acceleration sample (gravity removed). Returns true when a flick completes. */
@@ -97,7 +116,14 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
 
         if (tMs - lastFiredAt < c.cooldownMs) {
             pushing = false
+            swings = 0
             return false
+        }
+
+        if (shake(x, y, z, m, tMs, warmedUp && quietBefore)) {
+            pushing = false
+            lastFiredAt = tMs
+            return true
         }
 
         if (pushing) {
@@ -145,6 +171,38 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
             // Count the ramp-up: the push really began when it crossed half the threshold.
             val rampStart = history.reversed().drop(1).takeWhile { it.magnitude >= c.pushThreshold * 0.5f }.lastOrNull()?.t
             if (rampStart != null) pushStartedAt = rampStart
+        }
+        return false
+    }
+
+    /** Tracks alternating swings; true when a small shake completes. */
+    private fun shake(x: Float, y: Float, z: Float, m: Float, tMs: Long, steadyBefore: Boolean): Boolean {
+        val c = config
+        if (swings > 0 && tMs - swingLastAt > c.shakeMaxGapMs) swings = 0
+        if (m < c.shakeThreshold) return false
+        val ux = x / m; val uy = y / m; val uz = z / m
+        if (swings == 0) {
+            if (!steadyBefore) return false
+            swings = 1
+            swingDir[0] = ux; swingDir[1] = uy; swingDir[2] = uz
+            swingStartedAt = tMs; swingLastAt = tMs
+            return false
+        }
+        val cos = ux * swingDir[0] + uy * swingDir[1] + uz * swingDir[2]
+        when {
+            cos > 0.3f -> {
+                swingLastAt = tMs // same swing continues
+                if (tMs - swingStartedAt > c.shakeMaxSwingMs) swings = 0
+            }
+            cos <= -0.5f && tMs - swingStartedAt >= c.shakeMinGapMs -> {
+                swings++
+                swingDir[0] = ux; swingDir[1] = uy; swingDir[2] = uz
+                swingStartedAt = tMs; swingLastAt = tMs
+                if (swings >= c.shakeSwings) {
+                    swings = 0
+                    return !blocked()
+                }
+            }
         }
         return false
     }
