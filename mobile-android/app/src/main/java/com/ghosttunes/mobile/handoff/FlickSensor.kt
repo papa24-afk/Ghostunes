@@ -98,7 +98,7 @@ class FlickSensor(
             Sensor.TYPE_GRAVITY -> detector.gravityZ = event.values[2]
             Sensor.TYPE_GYROSCOPE -> {
                 if (detector.addGyro(event.values[0], event.values[1], event.values[2], event.timestamp / 1_000_000)) {
-                    context.vibrate(35)
+                    context.vibrate(70)
                     monitor?.onDetection("twist")
                     onFlick()
                 }
@@ -113,7 +113,7 @@ class FlickSensor(
                 }
                 monitor?.onSample(t, x, y, z)
                 if (fired) {
-                    context.vibrate(35)
+                    context.vibrate(70)
                     monitor?.onDetection("sensor")
                     onFlick()
                 }

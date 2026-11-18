@@ -49,7 +49,16 @@ data class FlickConfig(
     val calmPeak: Float = 22f,
     val calmMean: Float = 9f,
     /** Wrist twist back and forth (gyroscope), rad/s per swing. */
-    val twistThreshold: Float = 4f,
+    val twistThreshold: Float = 3f,
+    /**
+     * Energy shake (direction-free, like common "shake to..." features): within the last
+     * [energyWindowMs], at least half the samples are ≥ [energyThreshold], over ≥ [energyMinSpanMs].
+     * Only if the phone was fairly calm just before ([energyCalmMean] over the second before).
+     */
+    val energyThreshold: Float = 7f,
+    val energyWindowMs: Long = 500,
+    val energyMinSpanMs: Long = 300,
+    val energyCalmMean: Float = 5f,
     val twistSwings: Int = 3,
     /**
      * The phone must be fairly steady before the push (rejects walking, running, pockets):
@@ -63,7 +72,7 @@ data class FlickConfig(
     /** Low-pass factor for estimating gravity from raw accelerometer data (~100 Hz). */
     val gravityAlpha: Float = 0.97f,
 ) {
-    fun scaled(scale: Float) = copy(pushThreshold = pushThreshold * scale, brakeThreshold = brakeThreshold * scale, shakeThreshold = shakeThreshold * scale, twistThreshold = twistThreshold * scale)
+    fun scaled(scale: Float) = copy(pushThreshold = pushThreshold * scale, brakeThreshold = brakeThreshold * scale, shakeThreshold = shakeThreshold * scale, twistThreshold = twistThreshold * scale, energyThreshold = energyThreshold * scale)
 }
 
 class FlickDetector(var config: FlickConfig = FlickConfig()) {
@@ -86,6 +95,8 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
     private val twistSwings = SwingTracker()
     /** Nothing violent in the last moment (updated from acceleration samples). */
     private var calm = false
+    /** Last ~1.5 s of magnitudes, for the energy shake. */
+    private val longHistory = ArrayDeque<Sample>()
 
     /** Proximity sensor reads "near" (pocket, bag, face). */
     var proximityNear: Boolean = false
@@ -104,6 +115,7 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         moveSwings.reset()
         twistSwings.reset()
         calm = false
+        longHistory.clear()
     }
 
     /** Linear acceleration sample (gravity removed). Returns true when a flick completes. */
@@ -136,6 +148,13 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         }
 
         calm = warmedUp && max < c.calmPeak && mean < c.calmMean
+        if (energyShake(m, tMs) && !blocked()) {
+            pushing = false
+            moveSwings.reset()
+            twistSwings.reset()
+            lastFiredAt = tMs
+            return true
+        }
         if (moveSwings.add(x, y, z, m, tMs, c.shakeThreshold, c.shakeSwings, calm) && !blocked()) {
             pushing = false
             lastFiredAt = tMs
@@ -189,6 +208,25 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
             if (rampStart != null) pushStartedAt = rampStart
         }
         return false
+    }
+
+    private fun energyShake(m: Float, tMs: Long): Boolean {
+        val c = config
+        longHistory.addLast(Sample(tMs, m))
+        val keepFrom = tMs - c.energyWindowMs - 1_000
+        while (longHistory.isNotEmpty() && longHistory.first().t < keepFrom) longHistory.removeFirst()
+        if (longHistory.first().t > keepFrom + 100) return false // not enough history yet
+        val windowFrom = tMs - c.energyWindowMs
+        var inWindow = 0; var strong = 0; var first = tMs
+        var beforeSum = 0f; var beforeN = 0
+        for (h in longHistory) {
+            if (h.t >= windowFrom) {
+                inWindow++
+                if (h.magnitude >= c.energyThreshold) { strong++; if (h.t < first) first = h.t }
+            } else { beforeSum += h.magnitude; beforeN++ }
+        }
+        if (strong < 4 || strong * 2 < inWindow || tMs - first < c.energyMinSpanMs) return false
+        return beforeN > 0 && beforeSum / beforeN < c.energyCalmMean
     }
 
     /** Gyroscope sample (rad/s): a quick wrist twist back and forth also counts as a shake. */
