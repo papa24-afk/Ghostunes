@@ -121,12 +121,12 @@ fun QueueSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                     }
                 }
                 if (state.shuffle && entries.size > 1) {
-                    Text("Shuffle is on. Turn it off to reorder.", style = TypeScale.label, color = GT.TextTertiary, modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.xxs))
+                    Text("Turn off shuffle to reorder.", style = TypeScale.label, color = GT.TextTertiary, modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.xxs))
                 }
             }
             if (entries.isEmpty()) {
                 item(key = "empty") {
-                    Text("Nothing queued. Smart radio adds similar songs when the queue ends.", style = TypeScale.body, color = GT.TextSecondary, modifier = Modifier.padding(Space.edge))
+                    Text("Nothing queued.", style = TypeScale.body, color = GT.TextSecondary, modifier = Modifier.padding(Space.edge))
                 }
             }
             items(entries, key = { it.key }) { entry ->
@@ -253,11 +253,6 @@ fun DeviceSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                 vm.handoff()
                 onDismiss()
             }
-            Text(
-                "Tip: flick your phone toward the PC, or tap your Ghosttunes NFC sticker.",
-                style = TypeScale.label.copy(fontWeight = TypeScale.body.fontWeight), color = GT.TextTertiary,
-                modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.sm),
-            )
         }
     }
 }

@@ -16,6 +16,7 @@ import kotlinx.serialization.Serializable
 @Serializable object LikedRoute
 @Serializable object DownloadsRoute
 @Serializable object HistoryRoute
+@Serializable object ImportRoute
 @Serializable data class AlbumRoute(val id: String)
 @Serializable data class ArtistRoute(val id: String, val name: String)
 @Serializable data class PlaylistRoute(val id: String)

@@ -43,6 +43,7 @@ class MainViewModel @Inject constructor(
     private val sleep: SleepTimer,
     private val api: com.ghosttunes.mobile.data.net.GhosttunesApi,
 ) : ViewModel() {
+    val coordinator: HandoffCoordinator get() = handoff
     val player: StateFlow<PlayerState> = playback.state
     val progress: StateFlow<Progress> = playback.progress
     val likedIds: StateFlow<Set<String>> = library.likedIds
@@ -112,7 +113,7 @@ class MainViewModel @Inject constructor(
     fun cancelSleep() { sleep.cancel(); snack("Sleep timer off") }
 
     fun share(t: Track) {
-        val text = "${t.title} · ${t.artist}\nhttps://music.youtube.com/watch?v=${t.id}"
+        val text = "${t.title} · ${t.artist}"
         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
         context.startActivity(Intent.createChooser(send, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }

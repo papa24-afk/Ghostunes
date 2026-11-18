@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -128,12 +129,14 @@ fun LibraryScreen(vm: LibraryViewModel = hiltViewModel()) {
     val bottom = LocalBottomPadding.current
     var filter by remember { mutableStateOf<LibFilter?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var addMenu by remember { mutableStateOf(false) }
+    val actions = LocalActions.current
 
     val items = remember(data, filter, prefs.librarySort) {
         val d = data ?: return@remember emptyList()
         val list = mutableListOf<LibItem>()
         list += LibItem("liked", "Liked Songs", "Playlist · ${d.likedCount} songs", null, Icons.Rounded.Favorite, pinned = true, kind = LibFilter.Playlists) { it.nav.navigate(LikedRoute) }
-        list += LibItem("downloads", "Downloads", "${d.downloadCount} songs · plays offline", null, Icons.Rounded.Download, pinned = true, kind = LibFilter.Downloaded) { it.nav.navigate(DownloadsRoute) }
+        list += LibItem("downloads", "Downloads", "${d.downloadCount} songs", null, Icons.Rounded.Download, pinned = true, kind = LibFilter.Downloaded) { it.nav.navigate(DownloadsRoute) }
         list += LibItem("history", "Recently played", d.lastPlayed?.let { "Last: ${it.title}" } ?: "Nothing yet", null, Icons.Rounded.History, pinned = true) { it.nav.navigate(HistoryRoute) }
         val rest = mutableListOf<LibItem>()
         d.playlists.forEach { p ->
@@ -152,7 +155,7 @@ fun LibraryScreen(vm: LibraryViewModel = hiltViewModel()) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Your Library", style = TypeScale.headline, color = GT.Text, modifier = Modifier.weight(1f))
-            IconButton(onClick = { creating = true }) { Icon(Icons.Rounded.Add, "Create playlist", tint = GT.Text) }
+            IconButton(onClick = { addMenu = true }) { Icon(Icons.Rounded.Add, "Create or import a playlist", tint = GT.Text) }
         }
         LazyRow(contentPadding = PaddingValues(horizontal = Space.edge, vertical = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             items(LibFilter.entries) { f -> Chip(f.label, filter == f, { filter = if (filter == f) null else f }) }
@@ -184,13 +187,23 @@ fun LibraryScreen(vm: LibraryViewModel = hiltViewModel()) {
                 item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
                     Column(Modifier.padding(Space.edge)) {
                         Text("Create your first playlist", style = TypeScale.bodyLarge, color = GT.Text)
-                        Text("Tap + above, or use Add to playlist from any song.", style = TypeScale.body, color = GT.TextSecondary)
+                        Text("Tap + to create or import one.", style = TypeScale.body, color = GT.TextSecondary)
                     }
                 }
             }
         }
     }
 
+    if (addMenu) {
+        com.ghosttunes.mobile.ui.player.GtSheet({ addMenu = false }) {
+            Column(Modifier.navigationBarsPadding().padding(bottom = Space.md)) {
+                com.ghosttunes.mobile.ui.common.MenuItem(Icons.Rounded.Add, "Create playlist") { addMenu = false; creating = true }
+                com.ghosttunes.mobile.ui.common.MenuItem(Icons.Rounded.Download, "Import playlist") {
+                    addMenu = false; actions.nav.navigate(com.ghosttunes.mobile.ui.ImportRoute)
+                }
+            }
+        }
+    }
     if (creating) {
         NameDialog("Name your playlist", "", "Create", { name -> main.createPlaylistWith(name, null); creating = false }, { creating = false })
     }

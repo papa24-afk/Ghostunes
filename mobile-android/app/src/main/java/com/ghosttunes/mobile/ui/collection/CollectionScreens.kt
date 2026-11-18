@@ -146,7 +146,7 @@ fun LikedScreen(vm: CollectionViewModel = hiltViewModel()) {
     CollectionScaffold(
         CollectionHeader("Liked Songs", "", "${list.size} songs", glyph = { GlyphTile(Icons.Rounded.Favorite) }),
         list, loading = tracks == null, error = null, onRetry = {}, from = "Liked Songs",
-        emptyTitle = "Songs you like will appear here", emptyMessage = "Tap the heart on any song to save it.",
+        emptyTitle = "No liked songs yet", emptyMessage = "",
     )
 }
 
@@ -158,7 +158,7 @@ fun HistoryScreen(vm: CollectionViewModel = hiltViewModel()) {
     CollectionScaffold(
         CollectionHeader("Recently played", "", "${tracks.orEmpty().size} songs", glyph = { GlyphTile(Icons.Rounded.History) }),
         tracks.orEmpty(), loading = tracks == null, error = null, onRetry = {}, from = "Recently played",
-        emptyTitle = "Nothing played yet", emptyMessage = "Songs you play show up here.",
+        emptyTitle = "Nothing played yet", emptyMessage = "",
         onMore = { menu = true },
     )
     if (menu) GtSheet({ menu = false }) {
@@ -182,9 +182,9 @@ fun DownloadsScreen(vm: CollectionViewModel = hiltViewModel()) {
         if (pending.isNotEmpty()) append(" · ${pending.size} downloading")
     }
     CollectionScaffold(
-        CollectionHeader("Downloads", "Plays without your PC", meta, glyph = { GlyphTile(Icons.Rounded.Download) }),
+        CollectionHeader("Downloads", "", meta, glyph = { GlyphTile(Icons.Rounded.Download) }),
         done.map { it.track }, loading = items == null, error = null, onRetry = {}, from = "Downloads",
-        emptyTitle = "No downloads yet", emptyMessage = "Download songs, albums or playlists to play them with your PC off.",
+        emptyTitle = "No downloads yet", emptyMessage = "",
         onMore = if (done.isNotEmpty()) ({ menu = true }) else null,
     )
     if (menu) GtSheet({ menu = false }) {
@@ -208,7 +208,7 @@ fun UserPlaylistScreen(id: Long, vm: CollectionViewModel = hiltViewModel()) {
     CollectionScaffold(
         name?.let { CollectionHeader(it, "Your playlist", "${list.size} songs", cover, glyph = if (cover == null) ({ GlyphTile(Icons.Rounded.Edit) }) else null) },
         list, loading = tracks == null, error = null, onRetry = {}, from = name.orEmpty(), playlistId = id,
-        emptyTitle = "Let's find something for your playlist", emptyMessage = "Use the ⋮ menu on any song and choose Add to playlist.",
+        emptyTitle = "This playlist is empty", emptyMessage = "",
         onMore = { menu = true },
     )
     if (menu) GtSheet({ menu = false }) {

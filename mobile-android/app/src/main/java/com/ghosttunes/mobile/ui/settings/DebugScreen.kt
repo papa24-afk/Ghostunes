@@ -114,8 +114,8 @@ fun DebugScreen(vm: DebugViewModel = hiltViewModel()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Space.edge).padding(bottom = bottom)) {
             Text(sensorName, style = TypeScale.label, color = GT.TextSecondary)
             Text(
-                "Push ≥ %.1f m/s² (>%d%% on one axis) for ≥ %d ms, then brake ≥ %.1f m/s² within %d ms. Cooldown %d s. Sensitivity: %s."
-                    .format(cfg.pushThreshold, (cfg.axisDominance * 100).toInt(), cfg.minPushMs, cfg.brakeThreshold, cfg.brakeWindowMs, cfg.cooldownMs / 1000, settings.flickSensitivity.label),
+                "Push ≥ %.1f m/s² in any direction for %d–%d ms, then brake ≥ %.1f m/s² back the other way within %d ms. Cooldown %d s. Sensitivity: %s."
+                    .format(cfg.pushThreshold, cfg.minPushMs, cfg.maxPushMs, cfg.brakeThreshold, cfg.brakeWindowMs, cfg.cooldownMs / 1000, settings.flickSensitivity.label),
                 style = TypeScale.body, color = GT.TextSecondary, modifier = Modifier.padding(top = Space.xxs),
             )
             Spacer(Modifier.height(Space.md))

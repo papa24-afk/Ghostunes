@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var handoff: HandoffCoordinator
     @Inject lateinit var flickMonitor: FlickMonitor
+    @Inject lateinit var locator: com.ghosttunes.mobile.data.net.PcLocator
 
     /** Set when the notification or a handoff asks to show Now Playing. */
     val openPlayerRequests = MutableStateFlow(0)
@@ -60,6 +61,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Quietly re-find the PC if its address changed (new Wi-Fi, hotspot...).
+        lifecycleScope.launch { runCatching { locator.ensure(allowScan = false) } }
     }
 
     override fun onPause() {

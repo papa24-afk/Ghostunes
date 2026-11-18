@@ -105,17 +105,13 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), connect: ConnectView
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottom)) {
             Section("Music")
-            ToggleRow(
-                "Stream from this phone",
-                if (s.streamFromPhone) "Search and play straight from YouTube Music. No PC needed." else "Search and play through Ghosttunes on your PC.",
-                s.streamFromPhone,
-            ) { v -> vm.set { setStreamFromPhone(v) } }
+            ToggleRow("Stream on this phone", if (s.streamFromPhone) "On" else "Using your PC", s.streamFromPhone) { v -> vm.set { setStreamFromPhone(v) } }
 
             Section("Your PC")
             Column(Modifier.padding(horizontal = Space.edge)) {
                 val changed = conn.address.trimEnd('/') != s.serverUrl
                 Text(
-                    if (changed) "Unsaved address" else "Used for Send to PC${if (s.streamFromPhone) " and as a backup source" else ""}: ${s.serverUrl.removePrefix("http://")}",
+                    if (changed) "Unsaved address" else s.serverUrl.removePrefix("http://"),
                     style = TypeScale.body, color = GT.TextSecondary, modifier = Modifier.padding(bottom = Space.sm),
                 )
                 ServerConnectPanel(conn, connect)
@@ -125,40 +121,32 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), connect: ConnectView
             }
 
             Section("Playback")
-            ToggleRow("Data saver streaming", "Lower bitrate when streaming", s.lowQualityStreaming) { v -> vm.set { setLowQualityStreaming(v) } }
-            ToggleRow("Autoplay", "Keep playing similar songs when your queue ends", s.autoplay) { v -> vm.set { setAutoplay(v) } }
+            ToggleRow("Data saver", "Lower quality streaming", s.lowQualityStreaming) { v -> vm.set { setLowQualityStreaming(v) } }
+            ToggleRow("Autoplay", "Play similar songs when the queue ends", s.autoplay) { v -> vm.set { setAutoplay(v) } }
 
             Section("Downloads")
-            ToggleRow("Data saver downloads", "Smaller files, lower quality", s.lowQualityDownloads) { v -> vm.set { setLowQualityDownloads(v) } }
+            ToggleRow("Data saver downloads", "Smaller files", s.lowQualityDownloads) { v -> vm.set { setLowQualityDownloads(v) } }
             ValueRow("Downloaded music", formatBytes(storage.first), action = "Manage") { actions.nav.navigate(DownloadsRoute) }
             ValueRow("Streaming cache", formatBytes(storage.second), action = "Clear") { vm.clearCache(); actions.snack("Cache cleared") }
 
             Section("Send to PC")
-            ToggleRow("Flick to PC", "Flick your phone toward your PC to move what's playing", s.flickEnabled) { v -> vm.set { setFlickEnabled(v) } }
+            ToggleRow("Flick to PC", "Flick toward your PC to move the music", s.flickEnabled) { v -> vm.set { setFlickEnabled(v) } }
             AnimatedVisibility(s.flickEnabled) {
                 Column {
                     Column(Modifier.padding(horizontal = Space.edge, vertical = Space.sm)) {
                         Text("Sensitivity", style = TypeScale.bodyLarge, color = GT.Text)
-                        Text(
-                            when (s.flickSensitivity) {
-                                FlickSensitivity.Low -> "Needs a firm flick. Fewest accidental triggers."
-                                FlickSensitivity.Medium -> "Balanced for most phones."
-                                FlickSensitivity.High -> "A lighter flick works. May trigger more easily."
-                            },
-                            style = TypeScale.body, color = GT.TextSecondary,
-                        )
                         Spacer(Modifier.height(Space.sm))
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                             FlickSensitivity.entries.forEach { f -> Chip(f.label, s.flickSensitivity == f, { vm.set { setFlickSensitivity(f) } }) }
                         }
                     }
-                    ToggleRow("Flick works in background", "While music plays and the screen is on, even outside the app", s.flickInBackground) { v -> vm.set { setFlickInBackground(v) } }
+                    ToggleRow("Flick in background", "While music plays", s.flickInBackground) { v -> vm.set { setFlickInBackground(v) } }
                 }
             }
-            ValueRow("NFC sticker", "Tap the phone on a sticker to send or get music", action = if (showNfcHelp) "Hide" else "How to") { showNfcHelp = !showNfcHelp }
+            ValueRow("NFC sticker", "Tap to send or get music", action = if (showNfcHelp) "Hide" else "Set up") { showNfcHelp = !showNfcHelp }
             AnimatedVisibility(showNfcHelp) {
                 Text(
-                    "1. Install NFC Tools from the Play Store.\n2. Write → Add a record → Custom URL / URI.\n3. Enter ghosttunes://handoff and tap Write.\n4. Hold a blank NFC sticker to the back of your phone.\n5. Stick it near your PC. Tap it to send what's playing, or to pick up what your PC is playing.\n\nYou can also add the \"Send to PC\" tile in Quick Settings.",
+                    "In NFC Tools: Write → Add a record → Custom URL → ghosttunes://handoff → Write.",
                     style = TypeScale.body, color = GT.TextSecondary, modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.xs),
                 )
             }
@@ -174,7 +162,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), connect: ConnectView
                     versionTaps >= 4 -> actions.snack("${7 - versionTaps} more taps")
                 }
             }
-            ValueRow("Typeface", "Inter, SIL Open Font License")
+            ValueRow("Licenses", "Inter font (SIL OFL)")
             Spacer(Modifier.height(Space.xl))
         }
     }

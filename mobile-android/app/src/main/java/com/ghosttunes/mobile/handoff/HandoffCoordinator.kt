@@ -46,7 +46,17 @@ class HandoffCoordinator @Inject constructor(
     private val api: GhosttunesApi,
     private val playback: PlaybackConnection,
     private val scope: CoroutineScope,
+    private val locator: com.ghosttunes.mobile.data.net.PcLocator,
 ) {
+    /** One-shot events that drive the transfer animation. */
+    sealed interface Transfer {
+        val track: Track
+        data class ToPc(override val track: Track) : Transfer
+        data class ToPhone(override val track: Track) : Transfer
+    }
+    private val _transfers = kotlinx.coroutines.flow.MutableSharedFlow<Transfer>(extraBufferCapacity = 4)
+    val transfers: kotlinx.coroutines.flow.SharedFlow<Transfer> = _transfers
+
     private val _status = MutableStateFlow<HandoffStatus?>(null)
     val status: StateFlow<HandoffStatus?> = _status
     private var lastTriggerAt = 0L
@@ -80,6 +90,14 @@ class HandoffCoordinator @Inject constructor(
 
     private suspend fun run() {
         try {
+            // Make sure we know where the PC is on this network (re-finds it if its address changed).
+            if (locator.ensure(allowScan = false) == null) {
+                show(HandoffStatus.Working("Looking for your PC…"))
+                if (locator.ensure(allowScan = true) == null) {
+                    show(HandoffStatus.Failed(DESKTOP_OFFLINE))
+                    return
+                }
+            }
             val controller = playback.controller()
             val (playing, current) = withContext(Dispatchers.Main) { controller.isPlaying to controller.currentMediaItem }
             if (playing && current != null) push() else pull()
@@ -129,6 +147,7 @@ class HandoffCoordinator @Inject constructor(
         }
         when (result?.status) {
             "playing" -> {
+                _transfers.tryEmit(Transfer.ToPc(snapshot.track))
                 withContext(Dispatchers.Main) { fadeOutAndPause(controller, 900) }
                 context.vibrate(20)
                 show(HandoffStatus.Done("Now playing on your PC"))
@@ -181,6 +200,7 @@ class HandoffCoordinator @Inject constructor(
             if (abs(controller.currentPosition - wantMs) > 250) controller.seekTo(wantMs)
         }
         runCatching { withContext(Dispatchers.IO) { api.release(ReleaseRequest("pulled")) } }
+        _transfers.tryEmit(Transfer.ToPhone(np.track))
         context.vibrate(20)
         show(HandoffStatus.Done("Moved to your phone"))
     }

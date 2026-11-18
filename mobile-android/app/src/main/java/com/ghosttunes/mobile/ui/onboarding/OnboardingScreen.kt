@@ -85,6 +85,7 @@ class ConnectViewModel @Inject constructor(
     private val discovery: ServerDiscovery,
     private val settings: SettingsRepository,
     private val config: ServerConfig,
+    private val locator: com.ghosttunes.mobile.data.net.PcLocator,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ConnectState(settings.current.serverUrl.ifBlank { BuildConfig.DEFAULT_SERVER }, phoneIp = discovery.localAddress()))
     val state: StateFlow<ConnectState> = _state
@@ -105,6 +106,13 @@ class ConnectViewModel @Inject constructor(
         scanJob?.cancel()
         _state.update { it.copy(scanning = true, scanDone = false, found = emptyList(), scanProgress = 0f, phoneIp = discovery.localAddress()) }
         scanJob = viewModelScope.launch {
+            // Ask the network first (instant), then scan.
+            val quick = locator.broadcast()
+            if (quick.isNotEmpty()) {
+                _state.update { it.copy(found = quick, scanning = false, scanDone = true, scanProgress = 1f) }
+                if (quick.size == 1) choose(quick.first())
+                return@launch
+            }
             discovery.scan().collect { p ->
                 _state.update { it.copy(scanProgress = p.checked / p.total.coerceAtLeast(1).toFloat(), found = p.found) }
                 if (p.found.size == 1 && _state.value.test != TestState.Ok) {

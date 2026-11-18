@@ -159,6 +159,7 @@ fun AppRoot(openPlayerRequests: StateFlow<Int>, vm: MainViewModel = hiltViewMode
                     composable<LikedRoute> { LikedScreen() }
                     composable<DownloadsRoute> { DownloadsScreen() }
                     composable<HistoryRoute> { HistoryScreen() }
+                    composable<ImportRoute> { com.ghosttunes.mobile.ui.library.ImportScreen() }
                     composable<AlbumRoute> { AlbumScreen(it.toRoute<AlbumRoute>().id) }
                     composable<ArtistRoute> { val r = it.toRoute<ArtistRoute>(); ArtistScreen(r.id, r.name) }
                     composable<PlaylistRoute> { PlaylistScreen(it.toRoute<PlaylistRoute>().id) }
@@ -210,6 +211,7 @@ fun AppRoot(openPlayerRequests: StateFlow<Int>, vm: MainViewModel = hiltViewMode
 
                 SnackHost(vm, Modifier.align(Alignment.BottomCenter).padding(bottom = if (expanded) navInset + Space.lg else bottomPadding))
 
+                com.ghosttunes.mobile.ui.components.TransferOverlay(vm.coordinator)
                 HandoffPill(handoff, Modifier.align(Alignment.TopCenter).statusBarsPadding())
             }
         }

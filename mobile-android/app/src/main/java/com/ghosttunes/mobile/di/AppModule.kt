@@ -62,6 +62,9 @@ object AppModule {
 
     @Provides @Singleton fun direct(client: OkHttpClient, json: Json) = com.ghosttunes.mobile.data.direct.DirectSource(client, json)
 
+    @Provides @Singleton fun importer(direct: com.ghosttunes.mobile.data.direct.DirectSource, json: Json) =
+        com.ghosttunes.mobile.data.direct.PlaylistImporter(direct, json)
+
     @Provides @Singleton fun database(context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "ghosttunes.db").build()
 

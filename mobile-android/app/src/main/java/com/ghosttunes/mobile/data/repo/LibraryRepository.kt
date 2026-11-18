@@ -54,6 +54,14 @@ class LibraryRepository @Inject constructor(
         return dao.createPlaylist(PlaylistEntity(name = name.trim().ifEmpty { "New playlist" }, createdAt = now, updatedAt = now))
     }
 
+    /** Creates a playlist holding [tracks] in order. Returns its id. */
+    suspend fun importPlaylist(name: String, tracks: List<Track>): Long {
+        val id = createPlaylist(name)
+        tracks.forEachIndexed { i, t -> dao.addToPlaylist(PlaylistTrackEntity(id, t.id, i, encode(t))) }
+        dao.touchPlaylist(id, System.currentTimeMillis())
+        return id
+    }
+
     suspend fun renamePlaylist(id: Long, name: String) = dao.renamePlaylist(id, name.trim(), System.currentTimeMillis())
     suspend fun deletePlaylist(id: Long) = dao.deletePlaylist(id)
 

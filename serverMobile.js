@@ -1,5 +1,7 @@
 // Small, additive routes used by Ghosttunes Mobile (see mobile-android/docs/API.md, S1/S3/S4).
 // None of these change existing responses.
+import dgram from 'dgram';
+import os from 'os';
 import { extractBestThumbnail } from './serverArtwork.js';
 
 const text = (value) => {
@@ -103,6 +105,27 @@ function cached(key, ttlMs, compute) {
   cache.set(key, { promise, expiresAt: Date.now() + ttlMs });
   if (cache.size > 500) cache.delete(cache.keys().next().value);
   return promise;
+}
+
+/**
+ * LAN discovery: phones broadcast "GHOSTTUNES?" to UDP 3002 on whatever network they're on;
+ * we answer with the HTTP port and this PC's name, so the phone finds us without typing an IP.
+ */
+export function startDiscoveryResponder(httpPort, discoveryPort = 3002) {
+  try {
+    const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+    socket.on('message', (msg, rinfo) => {
+      if (msg.toString('utf8').trim() !== 'GHOSTTUNES?') return;
+      const reply = Buffer.from(JSON.stringify({ app: 'ghosttunes', port: Number(httpPort), name: os.hostname() }));
+      socket.send(reply, rinfo.port, rinfo.address);
+    });
+    socket.on('error', (err) => console.warn('[Discovery] UDP error:', err.message));
+    socket.bind(discoveryPort, '0.0.0.0', () => console.log(`[Discovery] Listening for phones on UDP ${discoveryPort}`));
+    return socket;
+  } catch (err) {
+    console.warn('[Discovery] Could not start:', err.message);
+    return null;
+  }
 }
 
 export function registerMobileRoutes(app, { getInnertube, getYtdlTrackInfo, chooseFormat, ytdlClient }) {

@@ -27,7 +27,7 @@ import javax.inject.Singleton
 /** A failed call, phrased for people. */
 class ServerError(message: String, cause: Throwable? = null) : Exception(message, cause)
 
-const val BLOCKED_MESSAGE = "YouTube is blocking this network right now. Try mobile data or another Wi-Fi."
+const val BLOCKED_MESSAGE = "This network is blocking music. Try mobile data or another Wi-Fi."
 
 /** True when YouTube refused anonymous access from this IP ("Sign in to confirm you're not a bot"). */
 fun Throwable.isYouTubeBlock(): Boolean {
@@ -74,9 +74,9 @@ class MusicRepository @Inject constructor(
     private fun describe(e: Throwable): ServerError = when {
         e is ServerError -> e
         e.isYouTubeBlock() -> ServerError(BLOCKED_MESSAGE, e)
-        e is UnknownHostException -> ServerError("No internet connection. Your downloads still play.", e)
+        e is UnknownHostException -> ServerError("No internet connection.", e)
         e is retrofit2.HttpException -> ServerError(if (e.code() == 404) "Not found." else "Your PC returned an error (${e.code()}).", e)
-        e is IOException -> ServerError(if (phoneFirst) "Couldn't load this. Check your connection." else "Can't reach your PC. Is Ghosttunes open and on the same Wi-Fi?", e)
+        e is IOException -> ServerError(if (phoneFirst) "Couldn't load this." else "Can't reach your PC. Is Ghosttunes open and on the same Wi-Fi?", e)
         else -> ServerError("Something went wrong loading this.", e)
     }
 

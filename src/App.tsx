@@ -4,6 +4,7 @@ import { Track, LyricLine, Playlist, HistoryItem, AutoplayMode } from './types';
 import { parseLrc, parseLyricsPayload, LyricFormat } from './utils/lyricsParser';
 import { DesktopPlayerView } from './components/DesktopPlayerView';
 import { MobilePlayerView } from './components/MobilePlayerView';
+import { HandoffArrival, HandoffAnimation } from './components/HandoffArrival';
 import { CinematicLyricsView } from './components/CinematicLyricsView';
 import { PlaylistModal } from './components/PlaylistModal';
 import { CreatePlaylistModal } from './components/CreatePlaylistModal';
@@ -851,6 +852,8 @@ export function App() {
   const pullHandoffRef = useRef<{ trackId: string; timer: any } | null>(null);
   const handoffBusyRef = useRef(false);
   const [handoffToast, setHandoffToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const [handoffAnimation, setHandoffAnimation] = useState<HandoffAnimation | null>(null);
+  const lastPhoneNameRef = useRef('your phone');
   const handoffToastTimerRef = useRef<any>(null);
   const showHandoffToast = (message: string, tone: 'info' | 'success' | 'error' = 'info', ms = 3200) => {
     if (handoffToastTimerRef.current) clearTimeout(handoffToastTimerRef.current);
@@ -2071,7 +2074,12 @@ export function App() {
     clearTimeout(incoming.timer);
     incomingHandoffRef.current = null;
     reportHandoffStatus(incoming.id, status, error);
-    if (status === 'playing') showHandoffToast(`Picked up from ${incoming.deviceName}`, 'success');
+    if (status === 'playing') {
+      lastPhoneNameRef.current = incoming.deviceName;
+      const track = currentTrackRef.current;
+      if (track) setHandoffAnimation({ key: Date.now(), direction: 'in', track, deviceName: incoming.deviceName });
+      else showHandoffToast(`Playing from ${incoming.deviceName}`, 'success');
+    }
   };
 
   const finishPullHandoff = (ok: boolean) => {
@@ -2129,6 +2137,10 @@ export function App() {
       },
       onRelease: () => {
         const audio = audioRef.current;
+        const track = currentTrackRef.current;
+        if (audio && !audio.paused && track) {
+          setHandoffAnimation({ key: Date.now(), direction: 'out', track, deviceName: lastPhoneNameRef.current });
+        }
         if (audio && !audio.paused) fadeOutAndPause(audio);
       }
     });
@@ -2680,6 +2692,9 @@ export function App() {
         activeMode={autoplayMode}
         onModeChange={(m) => setAutoplayMode(m as any)}
       />
+
+      {/* Tap / flick to transfer: arrival / departure animation */}
+      <HandoffArrival animation={handoffAnimation} onDone={() => setHandoffAnimation(null)} />
 
       {/* Tap / flick to transfer status pill */}
       {handoffToast && (

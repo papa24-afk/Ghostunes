@@ -121,22 +121,29 @@ class FlickDetectorTest {
     }
 
     @Test fun `sensitivity scales the threshold`() {
-        val gentle = concat(still(800), flick(push = 20.5, brake = 12.0), still(800))
+        val gentle = concat(still(800), flick(push = 16.0, brake = 10.0), still(800))
         assertEquals("high", 1, count(gentle, config = FlickConfig().scaled(0.85f)))
         assertEquals("medium", 1, count(gentle, config = FlickConfig().scaled(1.0f)))
         assertEquals("low", 0, count(gentle, config = FlickConfig().scaled(1.2f)))
     }
+
+    @Test fun `a light everyday flick fires at medium`() =
+        assertEquals(1, count(concat(still(800), flick(push = 17.0, brake = 11.0), still(800))))
 
     // ------------------------------------------------------------------ must not fire
 
     @Test fun `push without braking does not fire`() =
         assertEquals(0, count(concat(still(800), gen(600) { t -> doubleArrayOf(noise(1.0), pulse(t, 0, 160, 26.0), noise(1.0)) }, still(800))))
 
-    @Test fun `weak flick below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 16.0), still(800))))
+    @Test fun `weak flick below threshold does not fire`() = assertEquals(0, count(concat(still(800), flick(push = 12.0, brake = 8.0), still(800))))
 
-    @Test fun `diagonal push does not fire`() = assertEquals(0, count(concat(still(800), gen(500) { t ->
-        val v = pulse(t, 0, 140, 22.0) + pulse(t, 140, 160, -16.0)
+    @Test fun `a diagonal flick (phone held tilted) fires`() = assertEquals(1, count(concat(still(800), gen(500) { t ->
+        val v = pulse(t, 0, 140, 16.0) + pulse(t, 140, 160, -11.0)
         doubleArrayOf(v, v * 0.95, v * 0.45)
+    }, still(800))))
+
+    @Test fun `push then a sideways jolt (not back along the push) does not fire`() = assertEquals(0, count(concat(still(800), gen(500) { t ->
+        doubleArrayOf(pulse(t, 140, 160, -14.0) + 0.0, pulse(t, 0, 140, 22.0), noise(0.5))
     }, still(800))))
 
     @Test fun `late braking does not fire`() = assertEquals(0, count(concat(still(800), gen(900) { t ->

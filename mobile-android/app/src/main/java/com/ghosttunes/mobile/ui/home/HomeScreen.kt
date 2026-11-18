@@ -282,7 +282,7 @@ private fun OfflineCard(reason: String, onRetry: () -> Unit, onSettings: () -> U
         Text("Can't load music right now", style = TypeScale.title, color = GT.Text)
         Spacer(Modifier.height(Space.xxs))
         Text(
-            reason.ifBlank { "Check your internet connection." } + if (reason.contains("download")) "" else " Your downloads still play.",
+            reason.ifBlank { "Check your internet connection." },
             style = TypeScale.body, color = GT.TextSecondary,
         )
         Spacer(Modifier.height(Space.md))

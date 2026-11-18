@@ -38,6 +38,7 @@ class HandoffActivity : ComponentActivity() {
         setContent {
             GhosttunesTheme {
                 val status by coordinator.status.collectAsState()
+                com.ghosttunes.mobile.ui.components.TransferOverlay(coordinator)
                 Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.TopCenter) {
                     HandoffPill(status)
                 }
