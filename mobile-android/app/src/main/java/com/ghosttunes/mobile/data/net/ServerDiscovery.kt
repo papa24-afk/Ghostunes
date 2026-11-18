@@ -32,15 +32,31 @@ class ServerDiscovery @Inject constructor(
 
     data class Progress(val checked: Int, val total: Int, val found: List<String>)
 
+    /**
+     * Every private IPv4 this phone has: Wi-Fi, and also the hotspot interface when the phone is
+     * hosting a hotspot (then the "active network" is mobile data, which is the wrong subnet).
+     */
+    fun localAddresses(): List<String> {
+        val all = runCatching {
+            java.net.NetworkInterface.getNetworkInterfaces().toList()
+                .filter { it.isUp && !it.isLoopback }
+                .sortedBy { n -> if (n.name.startsWith("ap") || n.name.startsWith("swlan") || n.name.startsWith("wlan")) 0 else 1 }
+                .flatMap { it.inetAddresses.toList() }
+                .filterIsInstance<Inet4Address>()
+                .filter { PrivateNetworkGuard.isLocalAddress(it) && !it.isLoopbackAddress }
+                .mapNotNull { it.hostAddress }
+        }.getOrDefault(emptyList())
+        return (listOfNotNull(localAddress()) + all).distinct()
+    }
+
     fun scan(port: Int = 3001): Flow<Progress> = channelFlow {
-        val own = localAddress()
+        val own = localAddresses()
         val candidates = buildList {
             add("10.0.2.2") // Android emulator's alias for the host PC
-            if (own != null) {
-                val prefix = own.substringBeforeLast('.')
-                for (i in 1..254) "$prefix.$i".let { if (it != own) add(it) }
+            own.map { it.substringBeforeLast('.') }.distinct().take(3).forEach { prefix ->
+                for (i in 1..254) "$prefix.$i".let { if (it !in own) add(it) }
             }
-        }
+        }.distinct()
         val found = mutableListOf<String>()
         var checked = 0
         val gate = Semaphore(48)
