@@ -84,6 +84,7 @@ data class ArtistChip(val name: String, val id: String?, val avatar: String?)
 data class HomeState(
     val loading: Boolean = true,
     val offline: Boolean = false,
+    val offlineReason: String = "",
     val trending: List<Track> = emptyList(),
     val mixes: List<Mix>? = null,
     val shelves: List<Pair<String, List<Track>>> = emptyList(),
@@ -114,7 +115,7 @@ class HomeViewModel @Inject constructor(
     private fun load() = viewModelScope.launch {
         val trending = music.home()
         if (trending.isFailure) {
-            _state.value = HomeState(loading = false, offline = true)
+            _state.value = HomeState(loading = false, offline = true, offlineReason = trending.exceptionOrNull()?.message.orEmpty())
             return@launch
         }
         val top = trending.getOrThrow()
@@ -170,7 +171,7 @@ fun HomeScreen(vm: HomeViewModel = hiltViewModel()) {
             }
 
             if (state.offline) {
-                item(key = "offline") { OfflineCard(onRetry = vm::refresh, onSettings = { actions.nav.navigate(SettingsRoute) }) }
+                item(key = "offline") { OfflineCard(state.offlineReason, onRetry = vm::refresh, onSettings = { actions.nav.navigate(SettingsRoute) }) }
                 if (downloaded.isNotEmpty()) {
                     item(key = "dl-h") { SectionHeader("Your downloads", action = "Show all") { actions.nav.navigate(DownloadsRoute) } }
                     item(key = "dl") { TrackCarousel(downloaded, from = "Downloads") }
@@ -272,22 +273,22 @@ private fun JumpBackIn(recent: List<Track>) {
 }
 
 @Composable
-private fun OfflineCard(onRetry: () -> Unit, onSettings: () -> Unit) {
+private fun OfflineCard(reason: String, onRetry: () -> Unit, onSettings: () -> Unit) {
     Column(
         Modifier.padding(Space.edge).fillMaxWidth().clip(RoundedCornerShape(Radii.sheet)).background(GT.Surface2).padding(Space.lg),
     ) {
         Icon(Icons.Rounded.CloudOff, null, tint = GT.TextSecondary, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(Space.sm))
-        Text("Can't reach your PC", style = TypeScale.title, color = GT.Text)
+        Text("Can't load music right now", style = TypeScale.title, color = GT.Text)
         Spacer(Modifier.height(Space.xxs))
         Text(
-            "Open Ghosttunes on your computer and keep both devices on the same Wi-Fi. Your downloads still play.",
+            reason.ifBlank { "Check your internet connection." } + if (reason.contains("download")) "" else " Your downloads still play.",
             style = TypeScale.body, color = GT.TextSecondary,
         )
         Spacer(Modifier.height(Space.md))
         Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             PillButton("Try again", onRetry, filled = true)
-            PillButton("Server settings", onSettings)
+            PillButton("Settings", onSettings)
         }
     }
 }

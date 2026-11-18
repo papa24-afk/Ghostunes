@@ -38,6 +38,8 @@ data class AppSettings(
     val savedQueueIndex: Int = 0,
     val savedPositionMs: Long = 0,
     val debugUnlocked: Boolean = false,
+    /** Stream and search straight from YouTube on the phone (true) or through the PC's server. */
+    val streamFromPhone: Boolean = true,
 )
 
 class SettingsRepository(private val context: Context, scope: CoroutineScope) {
@@ -56,6 +58,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         val queueIndex = intPreferencesKey("queue_index")
         val position = longPreferencesKey("queue_position")
         val debug = booleanPreferencesKey("debug_unlocked")
+        val phone = booleanPreferencesKey("stream_from_phone")
     }
 
     private fun Preferences.toSettings() = AppSettings(
@@ -73,6 +76,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         savedQueueIndex = this[K.queueIndex] ?: 0,
         savedPositionMs = this[K.position] ?: 0,
         debugUnlocked = this[K.debug] ?: false,
+        streamFromPhone = this[K.phone] ?: true,
     )
 
     /** Read once at startup so the first request already knows the PC address. */
@@ -92,6 +96,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     suspend fun setAutoplay(v: Boolean) = context.dataStore.edit { it[K.autoplay] = v }
     suspend fun setLibraryGrid(v: Boolean) = context.dataStore.edit { it[K.libGrid] = v }
     suspend fun setLibrarySort(v: Int) = context.dataStore.edit { it[K.libSort] = v }
+    suspend fun setStreamFromPhone(v: Boolean) = context.dataStore.edit { it[K.phone] = v }
     suspend fun unlockDebug() = context.dataStore.edit { it[K.debug] = true }
 
     suspend fun saveQueuePosition(index: Int, positionMs: Long) = context.dataStore.edit {

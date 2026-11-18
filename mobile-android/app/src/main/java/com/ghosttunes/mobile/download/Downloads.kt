@@ -124,6 +124,7 @@ interface DownloadWorkerDeps {
     fun config(): ServerConfig
     fun settings(): SettingsRepository
     fun json(): Json
+    fun direct(): com.ghosttunes.mobile.data.direct.DirectSource
 }
 
 class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -143,38 +144,29 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val part = File(DownloadFiles.dir(applicationContext), "$id.part")
         try {
             dao.update(id, DownloadRepository.STATE_RUNNING, 0f, 0)
-            val url = deps.config().downloadUrl(id, deps.settings().current.lowQualityDownloads)
-            client.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                if (!response.isSuccessful) error("HTTP ${response.code}")
-                val body = response.body ?: error("empty body")
-                val total = body.contentLength().takeIf { it > 0 } ?: -1L
-                var read = 0L
-                var lastUpdate = 0L
-                part.outputStream().use { out ->
-                    body.byteStream().use { input ->
-                        val buf = ByteArray(64 * 1024)
-                        while (true) {
-                            if (isStopped) return@withContext Result.failure()
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            read += n
-                            val now = System.currentTimeMillis()
-                            if (now - lastUpdate > 300) {
-                                lastUpdate = now
-                                val p = if (total > 0) read.toFloat() / total else 0f
-                                dao.update(id, DownloadRepository.STATE_RUNNING, p, read)
-                                runCatching { setForeground(foreground(track.title, p)) }
-                            }
-                        }
-                    }
-                }
-                if (read == 0L) error("no data")
-                val target = DownloadFiles.audio(applicationContext, id)
-                if (!part.renameTo(target)) {
-                    part.copyTo(target, overwrite = true)
-                    part.delete()
-                }
+            val settings = deps.settings().current
+            val low = settings.lowQualityDownloads
+            var lastUpdate = 0L
+            suspend fun progress(read: Long, total: Long) {
+                val now = System.currentTimeMillis()
+                if (now - lastUpdate < 300) return
+                lastUpdate = now
+                val p = if (total > 0) read.toFloat() / total else 0f
+                dao.update(id, DownloadRepository.STATE_RUNNING, p, read)
+                runCatching { setForeground(foreground(track.title, p)) }
+            }
+
+            // Straight from YouTube on the phone (1 MB ranges, like the player), else via the PC.
+            val ok = if (settings.streamFromPhone) runCatching { downloadDirect(id, low, part, ::progress) }.getOrDefault(false) else false
+            if (!ok) downloadFromPc(client, deps.config().downloadUrl(id, low), part, ::progress)
+            val read = part.length()
+            if (read == 0L) error("no data")
+            val target = DownloadFiles.audio(applicationContext, id)
+            if (!part.renameTo(target)) {
+                part.copyTo(target, overwrite = true)
+                part.delete()
+            }
+            run {
                 // Artwork for offline display.
                 runCatching {
                     val art = ArtworkUrls.sized(track.thumbnail, ArtworkUrls.Size.Hero)
@@ -196,6 +188,57 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             part.delete()
             dao.update(id, DownloadRepository.STATE_FAILED, 0f, 0)
             if (runAttemptCount < 2) Result.retry() else Result.failure()
+        }
+    }
+
+    private suspend fun downloadDirect(id: String, low: Boolean, part: File, progress: suspend (Long, Long) -> Unit): Boolean {
+        val direct = deps.direct()
+        val stream = direct.stream(id, low)
+        val client = direct.client.newBuilder()
+            .addInterceptor(com.ghosttunes.mobile.data.direct.YouTubeStreamInterceptor())
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+        var total = stream.contentLength
+        var offset = 0L
+        part.outputStream().use { out ->
+            while (total < 0 || offset < total) {
+                if (isStopped) return false
+                val end = if (total > 0) minOf(offset + CHUNK - 1, total - 1) else offset + CHUNK - 1
+                client.newCall(Request.Builder().url(stream.url).header("Range", "bytes=$offset-$end").build()).execute().use { r ->
+                    if (r.code != 206 && r.code != 200) error("HTTP ${r.code}")
+                    if (total < 0) total = r.header("Content-Range")?.substringAfter('/')?.toLongOrNull() ?: r.body?.contentLength() ?: -1
+                    val bytes = r.body?.bytes() ?: ByteArray(0)
+                    if (bytes.isEmpty()) return offset > 0
+                    out.write(bytes)
+                    offset += bytes.size
+                    if (r.code == 200) return true
+                }
+                progress(offset, total)
+                if (total < 0) break
+            }
+        }
+        return offset > 0
+    }
+
+    private suspend fun downloadFromPc(client: OkHttpClient, url: String, part: File, progress: suspend (Long, Long) -> Unit) {
+        client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code}")
+            val body = response.body ?: error("empty body")
+            val total = body.contentLength().takeIf { it > 0 } ?: -1L
+            var read = 0L
+            part.outputStream().use { out ->
+                body.byteStream().use { input ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        if (isStopped) return
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        read += n
+                        progress(read, total)
+                    }
+                }
+            }
         }
     }
 
@@ -221,6 +264,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 
     companion object {
+        const val CHUNK = 1L shl 20
         const val KEY_ID = "track_id"
         const val CHANNEL = "downloads"
     }

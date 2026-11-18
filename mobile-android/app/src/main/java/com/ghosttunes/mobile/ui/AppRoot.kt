@@ -92,7 +92,8 @@ import kotlinx.coroutines.flow.StateFlow
 @Composable
 fun AppRoot(openPlayerRequests: StateFlow<Int>, vm: MainViewModel = hiltViewModel()) {
     val settings by vm.settings.settings.collectAsState()
-    if (!settings.onboarded) {
+    // The phone streams on its own; the PC setup screen only appears if the user chose the PC as source.
+    if (!settings.streamFromPhone && !settings.onboarded) {
         OnboardingScreen()
         return
     }

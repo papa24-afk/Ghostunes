@@ -15,3 +15,16 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# NewPipeExtractor (direct YouTube streaming) and its JavaScript engine.
+-keep class org.schabi.newpipe.extractor.** { *; }
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.classfile.ClassFileWriter
+-keep class com.grack.nanojson.** { *; }
+-keep class com.google.protobuf.** { *; }
+-dontwarn org.mozilla.javascript.tools.**
+-dontwarn java.beans.**
+-dontwarn javax.script.**
+-dontwarn jdk.dynalink.**
+-dontwarn org.jsoup.**
+-dontwarn javax.annotation.**

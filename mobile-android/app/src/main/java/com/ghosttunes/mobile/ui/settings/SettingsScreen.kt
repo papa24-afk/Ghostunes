@@ -104,11 +104,18 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), connect: ConnectView
             Text("Settings", style = TypeScale.title, color = GT.Text)
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottom)) {
+            Section("Music")
+            ToggleRow(
+                "Stream from this phone",
+                if (s.streamFromPhone) "Search and play straight from YouTube Music. No PC needed." else "Search and play through Ghosttunes on your PC.",
+                s.streamFromPhone,
+            ) { v -> vm.set { setStreamFromPhone(v) } }
+
             Section("Your PC")
             Column(Modifier.padding(horizontal = Space.edge)) {
                 val changed = conn.address.trimEnd('/') != s.serverUrl
                 Text(
-                    if (changed) "Unsaved address" else "Connected to ${s.serverUrl.removePrefix("http://")}",
+                    if (changed) "Unsaved address" else "Used for Send to PC${if (s.streamFromPhone) " and as a backup source" else ""}: ${s.serverUrl.removePrefix("http://")}",
                     style = TypeScale.body, color = GT.TextSecondary, modifier = Modifier.padding(bottom = Space.sm),
                 )
                 ServerConnectPanel(conn, connect)
@@ -118,7 +125,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), connect: ConnectView
             }
 
             Section("Playback")
-            ToggleRow("Data saver streaming", "Lower bitrate when streaming from your PC", s.lowQualityStreaming) { v -> vm.set { setLowQualityStreaming(v) } }
+            ToggleRow("Data saver streaming", "Lower bitrate when streaming", s.lowQualityStreaming) { v -> vm.set { setLowQualityStreaming(v) } }
             ToggleRow("Autoplay", "Keep playing similar songs when your queue ends", s.autoplay) { v -> vm.set { setAutoplay(v) } }
 
             Section("Downloads")

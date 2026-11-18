@@ -48,11 +48,18 @@ class PlayerFactory @Inject constructor(
     private val config: ServerConfig,
     private val settings: SettingsRepository,
     private val audioCache: AudioCache,
+    private val direct: com.ghosttunes.mobile.data.direct.DirectSource,
 ) {
+    private fun pcReachable(): Boolean = runCatching {
+        okHttp.newBuilder().callTimeout(2500, java.util.concurrent.TimeUnit.MILLISECONDS).build()
+            .newCall(okhttp3.Request.Builder().url(config.baseUrl.value + "/api/health").build()).execute().use { it.isSuccessful }
+    }.getOrDefault(false)
+
     fun create(): ExoPlayer {
         // Streaming: no read timeout surprises on slow first bytes (the PC may be resolving the stream).
         val streamClient = okHttp.newBuilder()
             .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+            .addInterceptor(com.ghosttunes.mobile.data.direct.YouTubeStreamInterceptor())
             .build()
         val http = OkHttpDataSource.Factory(streamClient)
         val cached = CacheDataSource.Factory()
@@ -61,20 +68,24 @@ class PlayerFactory @Inject constructor(
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val upstream = DefaultDataSource.Factory(context, cached)
 
-        // ghosttunes://track/<id> -> downloaded file, else http://<pc>/api/stream/<id>.
+        // ghosttunes://track/<id> -> downloaded file, else YouTube directly from the phone,
+        // else the PC's /api/stream/<id> (or the other way round if the user prefers the PC).
         val resolving = ResolvingDataSource.Factory(upstream) { spec ->
             val uri = spec.uri
             if (uri.scheme != "ghosttunes" || uri.host != "track") return@Factory spec
             val id = uri.lastPathSegment ?: return@Factory spec
             val local = DownloadFiles.localAudio(context, id)
-            if (local != null) {
-                spec.withUri(Uri.fromFile(local))
-            } else {
-                val low = settings.current.lowQualityStreaming
-                spec.buildUpon()
-                    .setUri(Uri.parse(config.streamUrl(id, low)))
-                    .setKey("track:$id:${if (low) "low" else "high"}")
-                    .build()
+            if (local != null) return@Factory spec.withUri(Uri.fromFile(local))
+            val low = settings.current.lowQualityStreaming
+            val q = if (low) "low" else "high"
+            fun viaPc() = spec.buildUpon().setUri(Uri.parse(config.streamUrl(id, low))).setKey("pc:$id:$q").build()
+            fun viaPhone() = direct.stream(id, low).let { s -> spec.buildUpon().setUri(Uri.parse(s.url)).setKey("yt:$id:$q").build() }
+            if (!settings.current.streamFromPhone) return@Factory viaPc()
+            try {
+                viaPhone()
+            } catch (e: Exception) {
+                // YouTube blocked or unreachable from here: use the PC if it's around, else report why.
+                if (pcReachable()) viaPc() else throw java.io.IOException(e.message ?: "stream unavailable", e)
             }
         }
 

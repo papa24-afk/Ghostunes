@@ -26,8 +26,8 @@ android {
         applicationId = "com.ghosttunes.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         buildConfigField("String", "DEFAULT_SERVER", "\"$defaultServer\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -56,6 +56,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -79,6 +80,12 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+tasks.withType<Test>().configureEach {
+    // ./gradlew :app:testDebugUnitTest -Dprobe=1 runs the live YouTube probe.
+    systemProperty("probe", System.getProperty("probe") ?: "")
+    testLogging { showStandardStreams = true }
 }
 
 ksp {
@@ -130,6 +137,10 @@ dependencies {
     implementation(libs.palette)
     implementation(libs.profileinstaller)
     implementation(libs.reorderable)
+
+    // Streams and searches YouTube directly on the phone (no PC needed).
+    implementation(libs.newpipe.extractor)
+    coreLibraryDesugaring(libs.desugar)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)

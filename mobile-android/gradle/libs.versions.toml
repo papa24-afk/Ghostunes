@@ -22,6 +22,8 @@ palette = "1.0.0"
 profileinstaller = "1.4.1"
 reorderable = "2.4.3"
 junit = "4.13.2"
+newpipe = "v0.27.1"
+desugar = "2.1.5"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -64,6 +66,8 @@ palette = { module = "androidx.palette:palette-ktx", version.ref = "palette" }
 profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 junit = { module = "junit:junit", version.ref = "junit" }
+newpipe-extractor = { module = "com.github.TeamNewPipe:NewPipeExtractor", version.ref = "newpipe" }
+desugar = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "desugar" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

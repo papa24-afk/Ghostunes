@@ -60,6 +60,8 @@ object AppModule {
         .build()
         .create(GhosttunesApi::class.java)
 
+    @Provides @Singleton fun direct(client: OkHttpClient, json: Json) = com.ghosttunes.mobile.data.direct.DirectSource(client, json)
+
     @Provides @Singleton fun database(context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "ghosttunes.db").build()
 

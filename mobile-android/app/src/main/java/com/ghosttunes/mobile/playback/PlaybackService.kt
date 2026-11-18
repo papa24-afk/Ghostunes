@@ -54,6 +54,8 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var handoff: HandoffCoordinator
     @Inject lateinit var flickMonitor: FlickMonitor
     @Inject lateinit var json: Json
+    @Inject lateinit var direct: com.ghosttunes.mobile.data.direct.DirectSource
+    private var retriedId: String? = null
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
@@ -199,6 +201,20 @@ class PlaybackService : MediaSessionService() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (!isPlaying) saveQueue()
             updateBackgroundFlick()
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            // YouTube stream links expire after a few hours (HTTP 403): drop the cached link and retry once.
+            val id = player.currentMediaItem?.mediaId ?: return
+            val http = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+            if ((http == 403 || http == 410) && retriedId != id) {
+                retriedId = id
+                direct.invalidate(id)
+                val pos = player.currentPosition
+                player.prepare()
+                player.seekTo(pos)
+                player.play()
+            }
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {

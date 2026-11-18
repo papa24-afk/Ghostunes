@@ -136,11 +136,20 @@ class PlaybackConnection @Inject constructor(
         _progress.value = Progress(c.currentPosition.coerceAtLeast(0), duration, c.bufferedPosition)
     }
 
-    private fun describe(e: PlaybackException): String = when (e.errorCode) {
+    private fun describe(e: PlaybackException): String = if (e.isBlocked()) com.ghosttunes.mobile.data.repo.BLOCKED_MESSAGE else when (e.errorCode) {
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Can't reach your PC. Is Ghosttunes open on the same Wi-Fi?"
-        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Your PC couldn't stream this song. Try another one."
-        else -> "This song couldn't be played."
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "No connection. Check your internet and try again."
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "This song couldn't be streamed. Tap Retry or try another one."
+        else -> "This song couldn't be played. Tap Retry or try another one."
+    }
+
+    private fun Throwable.isBlocked(): Boolean {
+        var t: Throwable? = this
+        while (t != null) {
+            if (t.javaClass.simpleName == "SignInConfirmNotBotException" || t.message?.contains("not a bot", true) == true || t.message?.contains("blocked anonymous", true) == true) return true
+            t = t.cause
+        }
+        return false
     }
 
     // ------------------------------------------------------------------ commands
