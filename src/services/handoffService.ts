@@ -83,6 +83,23 @@ export function deviceLabel(): string {
 
 // ---------------------------------------------------------------- desktop side
 
+/** The PC's current audio output if it's not the built-in speakers (e.g. "JBL GO 3"), for the device list. */
+let outputName: string | null = null;
+async function refreshOutputName() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const out = devices.find(d => d.kind === 'audiooutput' && d.deviceId === 'default') || devices.find(d => d.kind === 'audiooutput');
+    let label = (out?.label || '').replace(/^Default\s*-\s*/i, '').trim();
+    // "Headphones (JBL GO 3 Stereo)" -> "JBL GO 3 Stereo"; "Speakers (Realtek(R) Audio)" -> built-in.
+    const inner = label.match(/\((.+)\)\s*$/)?.[1] ?? label;
+    const builtIn = /realtek|high definition audio|intel|amd|conexant|built-?in|^speakers$/i.test(inner);
+    label = inner;
+    outputName = label && !builtIn ? label : null;
+  } catch {
+    outputName = null;
+  }
+}
+
 export interface DesktopListenerOptions {
   getNowPlaying: () => HandoffSnapshot | null;
   onHandoff: (handoff: IncomingHandoff) => void;
@@ -137,11 +154,13 @@ export function startDesktopHandoffListener(options: DesktopListenerOptions): ()
     fetch(url('/api/handoff/presence'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nowPlaying }),
+      body: JSON.stringify({ nowPlaying, output: outputName }),
     }).catch(() => {});
   };
 
   connect();
+  refreshOutputName();
+  navigator.mediaDevices?.addEventListener?.('devicechange', refreshOutputName);
   const presenceTimer = setInterval(sendPresence, PRESENCE_INTERVAL_MS);
   return () => {
     stopped = true;

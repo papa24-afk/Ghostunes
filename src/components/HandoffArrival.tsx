@@ -19,9 +19,9 @@ export function HandoffArrival({ animation, onDone }: { animation: HandoffAnimat
   useEffect(() => {
     if (!animation) return;
     setPhase('enter');
-    const hold = window.setTimeout(() => setPhase('hold'), 700);
-    const exit = window.setTimeout(() => setPhase('exit'), animation.direction === 'in' ? 2300 : 1500);
-    const done = window.setTimeout(onDone, animation.direction === 'in' ? 2900 : 2100);
+    const hold = window.setTimeout(() => setPhase('hold'), 450);
+    const exit = window.setTimeout(() => setPhase('exit'), animation.direction === 'in' ? 1500 : 1100);
+    const done = window.setTimeout(onDone, animation.direction === 'in' ? 1850 : 1450);
     return () => {
       window.clearTimeout(hold);
       window.clearTimeout(exit);
@@ -37,7 +37,7 @@ export function HandoffArrival({ animation, onDone }: { animation: HandoffAnimat
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden pointer-events-none"
-      style={{ animation: `${phase === 'exit' ? 'gtFadeOut 600ms ease forwards' : 'gtFadeIn 220ms ease forwards'}` }}
+      style={{ animation: `${phase === 'exit' ? 'gtFadeOut 350ms ease forwards' : 'gtFadeIn 120ms ease forwards'}` }}
       role="status"
       aria-live="polite"
     >
@@ -67,7 +67,7 @@ export function HandoffArrival({ animation, onDone }: { animation: HandoffAnimat
           style={{
             backgroundImage: `url("${art}")`,
             filter: 'blur(70px) saturate(1.4) brightness(0.55)',
-            animation: 'gtBgIn 900ms cubic-bezier(.2,.8,.2,1) forwards',
+            animation: 'gtBgIn 600ms cubic-bezier(.2,.8,.2,1) forwards',
           }}
         />
       )}
@@ -75,7 +75,7 @@ export function HandoffArrival({ animation, onDone }: { animation: HandoffAnimat
       <div className="relative flex flex-col items-center" style={{ perspective: '900px' }}>
         <div
           className="absolute rounded-[28px] border-2 border-white/40"
-          style={{ width: '320px', height: '320px', top: 0, animation: 'gtRing 1100ms 380ms cubic-bezier(.2,.8,.2,1) both' }}
+          style={{ width: '320px', height: '320px', top: 0, animation: 'gtRing 800ms 260ms cubic-bezier(.2,.8,.2,1) both' }}
         />
         <img
           src={art}
@@ -83,11 +83,11 @@ export function HandoffArrival({ animation, onDone }: { animation: HandoffAnimat
           className="w-[320px] h-[320px] rounded-[20px] object-cover shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
           style={{
             animation: arriving
-              ? 'gtArtIn 820ms cubic-bezier(.2,.9,.25,1) both'
-              : 'gtArtOut 900ms cubic-bezier(.55,0,.75,.2) both',
+              ? 'gtArtIn 560ms cubic-bezier(.2,.9,.25,1) both'
+              : 'gtArtOut 650ms cubic-bezier(.55,0,.75,.2) both',
           }}
         />
-        <div className="mt-8 text-center" style={{ animation: 'gtText 420ms 300ms ease both' }}>
+        <div className="mt-8 text-center" style={{ animation: 'gtText 300ms 200ms ease both' }}>
           <div className="text-3xl font-bold text-white max-w-[70vw] truncate">{track.title}</div>
           <div className="mt-1 text-lg text-white/70 max-w-[70vw] truncate">{track.artist}</div>
         </div>

@@ -35,7 +35,6 @@ class ProximityBeacon @Inject constructor(
     private val context: Context,
     private val config: ServerConfig,
     private val client: OkHttpClient,
-    private val coordinator: HandoffCoordinator,
     private val scope: CoroutineScope,
 ) {
     private val holders = mutableSetOf<String>()
@@ -82,7 +81,6 @@ class ProximityBeacon @Inject constructor(
                 runCatching { advertiser.startAdvertising(settings, data, callback); advertising = true }
             }
         }
-        if (listenJob?.isActive != true) listenJob = scope.launch(Dispatchers.IO) { listen() }
     }
 
     @SuppressLint("MissingPermission")
@@ -90,34 +88,6 @@ class ProximityBeacon @Inject constructor(
         if (advertising) {
             runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.bluetoothLeAdvertiser?.stopAdvertising(callback) }
             advertising = false
-        }
-        listenJob?.cancel()
-        listenJob = null
-    }
-
-    /** Server-sent events from the PC: "near" means this phone was just brought close. */
-    private suspend fun listen() {
-        val stream = client.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build()
-        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
-            runCatching {
-                val req = Request.Builder().url("${config.baseUrl.value}/api/handoff/phone-events?id=$id").build()
-                stream.newCall(req).execute().use { r ->
-                    val source = r.body?.source() ?: return@use
-                    var event = ""
-                    while (!source.exhausted()) {
-                        val line = source.readUtf8Line() ?: break
-                        if (line.startsWith("event:")) event = line.removePrefix("event:").trim()
-                        if (line.isEmpty()) {
-                            if (event == "near") {
-                                context.vibrate(25)
-                                coordinator.trigger("near")
-                            }
-                            event = ""
-                        }
-                    }
-                }
-            }
-            delay(4_000)
         }
     }
 

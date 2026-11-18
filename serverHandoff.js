@@ -100,6 +100,36 @@ function currentPresence(now = Date.now()) {
   return presence;
 }
 
+// A friendly PC name: the laptop/desktop model ("HP Laptop 14-dk1xxx" -> "HP Laptop 14"), else the hostname.
+let pcName = os.hostname();
+if (process.platform === 'win32') {
+  import('child_process').then(({ execFile }) => {
+    execFile('powershell', ['-NoProfile', '-Command', '(Get-CimInstance Win32_ComputerSystem).Model'], { windowsHide: true, timeout: 8000 }, (err, out) => {
+      const model = String(out || '').trim().replace(/[-\s]*[a-z0-9]*x{2,}[a-z0-9]*$/i, '').trim();
+      if (!err && model && !/system product name|to be filled|default string/i.test(model)) pcName = model;
+    });
+  }).catch(() => {});
+}
+export const getPcName = () => pcName;
+
+/** For the device list: is the desktop app connected, and what is it playing right now. */
+export function getDesktop() {
+  const now = Date.now();
+  const current = currentPresence(now);
+  let nowPlaying = null;
+  if (current?.nowPlaying) {
+    const elapsed = current.nowPlaying.isPlaying ? (now - current.stampedAt) / 1000 : 0;
+    const limit = current.nowPlaying.track.durationSeconds;
+    const position = current.nowPlaying.position + elapsed;
+    nowPlaying = { ...current.nowPlaying, position: limit ? Math.min(position, limit) : position };
+  }
+  return { online: desktopClients.size > 0 || Boolean(current), name: pcName, output: current?.output || null, nowPlaying };
+}
+
+export function sendToDesktop(event, data) {
+  return broadcast(event, data);
+}
+
 export function registerHandoffRoutes(app) {
   // Desktop app keeps this open to receive handoffs.
   app.get('/api/handoff/events', (req, res) => {
@@ -127,7 +157,8 @@ export function registerHandoffRoutes(app) {
   // Desktop reports what it is playing every 2s.
   app.post('/api/handoff/presence', (req, res) => {
     const nowPlaying = req.body?.nowPlaying ? sanitizeSnapshot(req.body.nowPlaying) : null;
-    presence = { nowPlaying, stampedAt: Date.now() };
+    const output = typeof req.body?.output === 'string' ? req.body.output.slice(0, 80) : null;
+    presence = { nowPlaying, output, stampedAt: Date.now() };
     res.json({ ok: true, serverTime: presence.stampedAt });
   });
 
@@ -143,7 +174,7 @@ export function registerHandoffRoutes(app) {
       const limit = current.nowPlaying.track.durationSeconds;
       nowPlaying = { ...current.nowPlaying, position: limit ? Math.min(position, limit) : position };
     }
-    res.json({ online, nowPlaying, serverTime: now, name: os.hostname() });
+    res.json({ online, nowPlaying, serverTime: now, name: pcName });
   });
 
   // Phone as a remote: play / pause / next / previous / seek on the desktop.

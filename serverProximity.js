@@ -20,7 +20,7 @@ let helperState = 'off';
 function phone(id) {
   let p = phones.get(id);
   if (!p) {
-    p = { clients: new Set(), ema: null, nearHits: 0, armed: true, lastTrigger: 0, lastSeen: 0, awaySince: 0 };
+    p = { clients: new Set(), channels: new Set(), ema: null, nearHits: 0, armed: true, lastTrigger: 0, lastSeen: 0, awaySince: 0, name: 'Phone', nowPlaying: null, stateAt: 0 };
     phones.set(id, p);
   }
   return p;
@@ -41,12 +41,13 @@ function onSighting(id, rssi) {
     return;
   }
   p.nearHits = rssi >= NEAR_DBM ? p.nearHits + 1 : 0;
-  if (p.nearHits >= 2 && now - p.lastTrigger > COOLDOWN_MS && p.clients.size) {
+  if (p.nearHits >= 2 && now - p.lastTrigger > COOLDOWN_MS && (p.clients.size || p.channels.size)) {
     p.lastTrigger = now;
     p.armed = false;
     p.nearHits = 0;
     const msg = `event: near\ndata: ${JSON.stringify({ rssi: Math.round(p.ema) })}\n\n`;
     for (const c of p.clients) { try { c.write(msg); } catch {} }
+    for (const ch of p.channels) { try { ch('near', { rssi: Math.round(p.ema) }); } catch {} }
     console.log(`[Proximity] phone ${id} brought close (${Math.round(p.ema)} dBm)`);
   }
 }
@@ -80,6 +81,53 @@ function compileHelper(done) {
     src,
   ];
   execFile(tool.csc, args, { windowsHide: true }, (err) => done(err ? null : exe));
+}
+
+/** Sends an event to one phone over its open /api/handoff/phone-events stream. */
+export function sendToPhone(id, event, data) {
+  const p = phones.get(String(id).toLowerCase());
+  if (!p) return 0;
+  const msg = `event: ${event}
+data: ${JSON.stringify(data)}
+
+`;
+  let n = 0;
+  for (const c of p.clients) { try { c.write(msg); n++; } catch {} }
+  for (const ch of p.channels) { try { ch(event, data); n++; } catch {} }
+  return n;
+}
+
+/** A phone connected over Bluetooth: deliver its events through [send]. Returns a detach function. */
+export function attachPhoneChannel(id, name, send) {
+  const p = phone(String(id).toLowerCase());
+  if (name) p.name = String(name).slice(0, 60);
+  p.channels.add(send);
+  return () => p.channels.delete(send);
+}
+
+/** Phones that are connected (or reported in the last minute), with live positions. */
+export function listPhones() {
+  const now = Date.now();
+  return [...phones.entries()]
+    .filter(([, p]) => p.clients.size > 0 || p.channels.size > 0 || now - p.stateAt < 60_000)
+    .map(([id, p]) => {
+      let nowPlaying = p.nowPlaying;
+      if (nowPlaying?.isPlaying) {
+        const position = nowPlaying.position + (now - p.stateAt) / 1000;
+        const limit = nowPlaying.track?.durationSeconds;
+        nowPlaying = { ...nowPlaying, position: limit ? Math.min(position, limit) : position };
+      }
+      return { id, type: 'phone', name: p.name, output: p.output || null, online: p.clients.size > 0 || p.channels.size > 0, via: p.channels.size && !p.clients.size ? 'bluetooth' : 'wifi', nowPlaying };
+    });
+}
+
+/** Phone reports what it's playing (every few seconds, and right after changes). */
+export function updatePhoneState(id, name, nowPlaying, output) {
+  const p = phone(String(id).toLowerCase());
+  if (name) p.name = String(name).slice(0, 60);
+  p.output = typeof output === 'string' ? output.slice(0, 80) : null;
+  p.nowPlaying = nowPlaying;
+  p.stateAt = Date.now();
 }
 
 export function startProximityWatcher() {
@@ -117,6 +165,7 @@ export function registerProximityRoutes(app) {
   app.get('/api/handoff/phone-events', (req, res) => {
     const id = String(req.query.id || '').toLowerCase();
     if (!/^[0-9a-f]{8}$/.test(id)) return res.status(400).end();
+    if (req.query.name) phone(id).name = String(req.query.name).slice(0, 60);
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' });
     res.write(`event: ready\ndata: ${JSON.stringify({ helper: helperState })}\n\n`);
     const p = phone(id);

@@ -32,8 +32,8 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var locator: com.ghosttunes.mobile.data.net.PcLocator
     @Inject lateinit var beacon: com.ghosttunes.mobile.handoff.ProximityBeacon
 
-    private val askBluetooth = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && settings.current.bringClose) beacon.hold("app", true)
+    private val askBluetooth = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (granted.values.any { it } && settings.current.bringClose) beacon.hold("app", true)
     }
 
     /** Set when the notification or a handoff asks to show Now Playing. */
@@ -73,12 +73,13 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Quietly re-find the PC if its address changed (new Wi-Fi, hotspot...).
         lifecycleScope.launch { runCatching { locator.ensure(allowScan = false) } }
+        handoff.watchDevices(true)
         // "Bring close to PC" while the app is on screen (the service covers playback in the background).
         if (settings.current.bringClose) {
             if (beacon.hasPermission()) beacon.hold("app", true)
             else if (android.os.Build.VERSION.SDK_INT >= 31 && !askedBluetooth) {
                 askedBluetooth = true
-                askBluetooth.launch(android.Manifest.permission.BLUETOOTH_ADVERTISE)
+                askBluetooth.launch(arrayOf(android.Manifest.permission.BLUETOOTH_ADVERTISE, android.Manifest.permission.BLUETOOTH_CONNECT))
             }
         }
     }
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         beacon.hold("app", false)
+        handoff.watchDevices(false)
         flickSensor?.stop()
     }
 

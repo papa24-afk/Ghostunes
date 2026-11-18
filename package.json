@@ -49,6 +49,9 @@
       "serverHandoff.js",
       "serverMobile.js",
       "serverProximity.js",
+      "serverDevices.js",
+      "serverBluetooth.js",
+      "bluetooth-link.cs",
       "proximity-watch.cs",
       "node_modules/**/*",
       "serverSmartRadio.js"
@@ -65,6 +68,9 @@
       "serverHandoff.js",
       "serverMobile.js",
       "serverProximity.js",
+      "serverDevices.js",
+      "serverBluetooth.js",
+      "bluetooth-link.cs",
       "proximity-watch.cs",
       "package.json",
       "serverSmartRadio.js"

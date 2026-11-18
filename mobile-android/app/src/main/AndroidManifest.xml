@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.NFC" />
     <!-- "Bring close to PC": a low-power Bluetooth beacon the PC measures. Never used for location. -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <!-- Reach the PC over Bluetooth when there's no shared Wi-Fi (paired PC only). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />

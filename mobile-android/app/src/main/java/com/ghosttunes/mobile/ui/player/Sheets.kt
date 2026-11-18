@@ -230,41 +230,52 @@ fun SheetOption(text: String, selected: Boolean, onClick: () -> Unit) {
 /** Spotify Connect-style picker: this phone, or Ghosttunes on the PC. */
 @Composable
 fun DeviceSheet(vm: MainViewModel, onDismiss: () -> Unit) {
-    val desktop by produceState<Result<DesktopState>?>(null) {
-        while (true) {
-            value = runCatching { vm.desktopState() }
-            delay(2_000)
-        }
-    }
+    val devices by vm.devices.collectAsState()
+    val remote by vm.remote.collectAsState()
+    val output by vm.output.collectAsState()
+    val via by vm.linkVia.collectAsState()
     GtSheet(onDismiss) {
         Column(Modifier.navigationBarsPadding().padding(bottom = Space.md)) {
             SheetTitle("Connect to a device")
-            val remote by vm.remote.collectAsState()
-            val output by vm.output.collectAsState()
             val onHeadset = output.kind != com.ghosttunes.mobile.playback.OutputDevice.Kind.Speaker
             DeviceRow(
                 if (onHeadset) Icons.Rounded.Headphones else Icons.Rounded.PhoneAndroid,
-                if (onHeadset) output.name else "This phone",
-                if (remote != null) "Continue here" else if (onHeadset) "This phone" else "Playing here",
+                vm.phoneName,
+                listOfNotNull(if (remote != null) "Continue here" else "This phone", output.name.takeIf { onHeadset }).joinToString(" · "),
                 active = remote == null, enabled = true,
             ) {
                 vm.continueOnPhone()
                 onDismiss()
             }
-            val d = desktop
-            val (subtitle, online) = when {
-                d == null -> "Looking for your PC…" to false
-                d.isFailure -> "Can't reach your PC" to false
-                d.getOrNull()?.online != true -> "Open Ghosttunes on your PC" to false
-                else -> {
-                    val np = d.getOrNull()?.nowPlaying
-                    (if (np != null && np.isPlaying) "Playing ${np.track.title}" else "Ready") to true
+            devices.forEach { d ->
+                val np = d.nowPlaying
+                val controlling = remote?.deviceId == d.id
+                val subtitle = listOfNotNull(
+                    when {
+                        np != null && np.isPlaying -> "Playing ${np.track.title}"
+                        np != null -> "Paused · ${np.track.title}"
+                        else -> "Ready"
+                    },
+                    d.output,
+                    "Bluetooth".takeIf { d.id == "pc" && via == com.ghosttunes.mobile.handoff.PcLink.Via.Bluetooth },
+                ).joinToString(" · ")
+                DeviceRow(
+                    if (d.type == "pc") Icons.Rounded.Computer else Icons.Rounded.PhoneAndroid,
+                    d.name.ifBlank { if (d.type == "pc") "PC" else "Phone" },
+                    subtitle,
+                    active = controlling,
+                    enabled = d.online,
+                ) {
+                    vm.selectDevice(d)
+                    onDismiss()
                 }
             }
-            val pcName = remote?.pcName ?: d?.getOrNull()?.name?.ifBlank { null } ?: "Your PC"
-            DeviceRow(Icons.Rounded.Computer, pcName, if (remote != null) "Playing here" else subtitle, active = remote != null, enabled = online || remote != null) {
-                vm.handoff()
-                onDismiss()
+            if (devices.isEmpty()) {
+                Text(
+                    if (via == null) "Open Ghosttunes on your PC. Same Wi-Fi, or pair the phone with it over Bluetooth." else "Looking for devices…",
+                    style = TypeScale.body, color = GT.TextSecondary,
+                    modifier = Modifier.padding(horizontal = Space.edge, vertical = Space.sm),
+                )
             }
         }
     }

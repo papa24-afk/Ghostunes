@@ -5,6 +5,7 @@ import { parseLrc, parseLyricsPayload, LyricFormat } from './utils/lyricsParser'
 import { DesktopPlayerView } from './components/DesktopPlayerView';
 import { MobilePlayerView } from './components/MobilePlayerView';
 import { HandoffArrival, HandoffAnimation } from './components/HandoffArrival';
+import { DevicesPanel } from './components/DevicesPanel';
 import { CinematicLyricsView } from './components/CinematicLyricsView';
 import { PlaylistModal } from './components/PlaylistModal';
 import { CreatePlaylistModal } from './components/CreatePlaylistModal';
@@ -2074,12 +2075,9 @@ export function App() {
     clearTimeout(incoming.timer);
     incomingHandoffRef.current = null;
     reportHandoffStatus(incoming.id, status, error);
-    if (status === 'playing') {
-      lastPhoneNameRef.current = incoming.deviceName;
-      const track = currentTrackRef.current;
-      if (track) setHandoffAnimation({ key: Date.now(), direction: 'in', track, deviceName: incoming.deviceName });
-      else showHandoffToast(`Playing from ${incoming.deviceName}`, 'success');
-    }
+    if (status === 'playing') lastPhoneNameRef.current = incoming.deviceName;
+    // The arrival animation already started when the song was sent; on failure, take it away.
+    if (status === 'failed') setHandoffAnimation(null);
   };
 
   const finishPullHandoff = (ok: boolean) => {
@@ -2124,6 +2122,11 @@ export function App() {
         return buildHandoffSnapshot(state.currentTrack, state.queue, state.queueIndex, position, playing);
       },
       onHandoff: ({ id, snapshot, stampedAt }) => {
+        // Animation first, instantly: it covers the app while the song loads underneath.
+        const artwork = new Image();
+        artwork.src = snapshot.track.thumbnail;
+        setShowLyrics(false);
+        setHandoffAnimation({ key: Date.now(), direction: 'in', track: snapshot.track, deviceName: snapshot.deviceName || 'your phone' });
         if (incomingHandoffRef.current) finishIncomingHandoff('failed', 'superseded');
         const timer = setTimeout(() => finishIncomingHandoff('failed', 'timeout'), 15000);
         incomingHandoffRef.current = { id, trackId: snapshot.track.id, deviceName: snapshot.deviceName || 'your phone', timer };
@@ -2702,6 +2705,24 @@ export function App() {
         activeMode={autoplayMode}
         onModeChange={(m) => setAutoplayMode(m as any)}
       />
+
+      {/* Connect: phones on this PC, their controls, and moving music either way */}
+      {isDesktopApp() && (
+        <DevicesPanel
+          getLocalSnapshot={() => {
+            const state = handoffStateRef.current;
+            const audio = audioRef.current;
+            if (!state.currentTrack || !audio || !audio.src) return null;
+            return buildHandoffSnapshot(state.currentTrack, state.queue, state.queueIndex, audio.currentTime, !audio.paused);
+          }}
+          onSentToPhone={(name) => {
+            const audio = audioRef.current;
+            const track = currentTrackRef.current;
+            if (track) setHandoffAnimation({ key: Date.now(), direction: 'out', track, deviceName: name });
+            if (audio && !audio.paused) fadeOutAndPause(audio);
+          }}
+        />
+      )}
 
       {/* Tap / flick to transfer: arrival / departure animation */}
       <HandoffArrival animation={handoffAnimation} onDone={() => {

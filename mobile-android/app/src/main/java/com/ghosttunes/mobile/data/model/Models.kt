@@ -177,5 +177,23 @@ data class DesktopState(val online: Boolean = false, val nowPlaying: HandoffSnap
 @Serializable
 data class CommandRequest(val action: String, val position: Double? = null)
 
+/** A device in the Connect list: the PC ("pc") or a phone. */
+@Serializable
+data class Device(
+    val id: String,
+    val type: String = "phone",
+    val name: String = "",
+    val output: String? = null,
+    val online: Boolean = false,
+    val via: String? = null,
+    val nowPlaying: HandoffSnapshot? = null,
+)
+
+@Serializable
+data class DevicesResponse(val devices: List<Device> = emptyList(), val serverTime: Long = 0)
+
+@Serializable
+data class DeviceStateRequest(val id: String, val name: String, val nowPlaying: HandoffSnapshot? = null, val output: String? = null)
+
 @Serializable
 data class ReleaseRequest(val reason: String)

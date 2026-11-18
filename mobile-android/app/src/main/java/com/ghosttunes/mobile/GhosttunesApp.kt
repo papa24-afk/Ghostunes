@@ -23,11 +23,14 @@ class GhosttunesApp : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var serverConfig: ServerConfig
     @Inject lateinit var scope: CoroutineScope
+    @Inject lateinit var pcLink: com.ghosttunes.mobile.handoff.PcLink
 
     override fun onCreate() {
         super.onCreate()
         // Keep the request target in sync with Settings.
         scope.launch { settings.settings.collect { serverConfig.set(it.serverUrl) } }
+        // Stay connected to the PC (Wi-Fi, else Bluetooth) so transfers start instantly.
+        pcLink.start()
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)

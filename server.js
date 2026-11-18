@@ -2,6 +2,8 @@ import express from 'express';
 import { extractBestThumbnail } from './serverArtwork.js';
 import { registerHandoffRoutes } from './serverHandoff.js';
 import { registerProximityRoutes, startProximityWatcher } from './serverProximity.js';
+import { registerDeviceRoutes } from './serverDevices.js';
+import { startBluetoothLink } from './serverBluetooth.js';
 import { registerMobileRoutes, fillMissingDurations, startDiscoveryResponder } from './serverMobile.js';
 import cors from 'cors';
 import fs from 'fs';
@@ -2098,6 +2100,7 @@ app.get('/api/rooms/:roomId/sync', (req, res) => {
 
 // Tap / flick to transfer between phone and desktop (must be before the static catch-all)
 registerProximityRoutes(app); // before /api/handoff/:id
+registerDeviceRoutes(app);
 registerHandoffRoutes(app);
 // Ghosttunes Mobile additions: stream prepare, typed search, playlist details
 registerMobileRoutes(app, { getInnertube, getYtdlTrackInfo, chooseFormat, ytdlClient });
@@ -2118,4 +2121,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Ghosttunes API listening on http://127.0.0.1:${PORT}`);
   startDiscoveryResponder(PORT);
   startProximityWatcher();
+  startBluetoothLink(PORT);
 });

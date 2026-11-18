@@ -46,6 +46,7 @@ object AppModule {
     @Provides @Singleton fun serverConfig(settings: SettingsRepository) = ServerConfig(settings.initial.serverUrl)
 
     @Provides @Singleton fun okHttp(config: ServerConfig): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(com.ghosttunes.mobile.handoff.BluetoothTunnelInterceptor())
         .addInterceptor(ServerRewriteInterceptor(config))
         .addInterceptor(PrivateNetworkGuard())
         .connectTimeout(6, TimeUnit.SECONDS)
