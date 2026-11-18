@@ -86,7 +86,7 @@ class PcLink @Inject constructor(
     private suspend fun reportLoop() {
         var lastSent = 0L
         while (true) {
-            delay(1_000)
+            delay(300)
             if (_via.value == null) continue
             val s = playback.state.value
             val p = playback.progress.value

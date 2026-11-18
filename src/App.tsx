@@ -6,6 +6,7 @@ import { DesktopPlayerView } from './components/DesktopPlayerView';
 import { MobilePlayerView } from './components/MobilePlayerView';
 import { HandoffArrival, HandoffAnimation } from './components/HandoffArrival';
 import { DevicesPanel } from './components/DevicesPanel';
+import { usePhoneRemote } from './services/phoneRemote';
 import { CinematicLyricsView } from './components/CinematicLyricsView';
 import { PlaylistModal } from './components/PlaylistModal';
 import { CreatePlaylistModal } from './components/CreatePlaylistModal';
@@ -1613,6 +1614,8 @@ export function App() {
 
   // Play/pause toggle
   const togglePlayPause = () => {
+    // Music is on a phone: the PC's play button controls it.
+    if (phoneRemoteRef.current.remote) { phoneRemoteRef.current.toggle(); return; }
     const audio = audioRef.current;
     if (!audio) return;
     if (!audio.src && currentTrack) {
@@ -2108,6 +2111,25 @@ export function App() {
     if (pullHandoffRef.current) finishPullHandoff(false);
   }, [playbackStatus]);
 
+  // Desktop: when the music is on a phone, this PC's player controls that phone (Connect-style).
+  const phoneRemote = usePhoneRemote(isDesktopApp() && !isStandaloneMiniWidget, () => {
+    const audio = audioRef.current;
+    return Boolean(audio && audio.src && !audio.paused);
+  });
+  const phoneRemoteRef = useRef(phoneRemote);
+  phoneRemoteRef.current = phoneRemote;
+  const remoteTrack = phoneRemote.remote?.nowPlaying.track ?? null;
+  // Lyrics follow whatever the player shows (the phone's song, then back to the PC's).
+  const remoteTrackId = remoteTrack?.id ?? null;
+  const lastLyricsRemoteRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastLyricsRemoteRef.current === remoteTrackId) return;
+    const had = lastLyricsRemoteRef.current;
+    lastLyricsRemoteRef.current = remoteTrackId;
+    if (remoteTrack && remoteTrack.id !== currentTrackRef.current?.id) fetchLyrics(remoteTrack);
+    else if (!remoteTrackId && had && had !== currentTrackRef.current?.id && currentTrackRef.current) fetchLyrics(currentTrackRef.current);
+  }, [remoteTrackId]);
+
   // Desktop: receive handoffs from the phone and report what we're playing.
   useEffect(() => {
     if (!isDesktopApp() || isStandaloneMiniWidget) return;
@@ -2386,10 +2408,11 @@ export function App() {
         ) : (
           <DesktopPlayerView
             keyboardShortcutsEnabled={!showLyrics}
-            track={currentTrack}
-            currentTime={currentTime}
-            duration={duration}
-            isPlaying={isPlaying}
+            track={remoteTrack ?? currentTrack}
+            currentTime={phoneRemote.remote ? phoneRemote.positionNow() : currentTime}
+            duration={phoneRemote.remote ? phoneRemote.duration : duration}
+            isPlaying={phoneRemote.remote ? phoneRemote.remote.nowPlaying.isPlaying : isPlaying}
+            remoteDevice={phoneRemote.remote ? { name: phoneRemote.remote.name, output: phoneRemote.remote.output, onPlayHere: phoneRemote.playHere } : null}
             lyrics={lyrics}
             plainLyrics={plainLyrics}
             loadingLyrics={loadingLyrics}
@@ -2418,10 +2441,10 @@ export function App() {
             onSelectPreset={handleSelectPreset}
             onUploadWallpaper={handleUploadWallpaper}
             onResetWallpaper={handleResetWallpaper}
-            onSeek={handleSeek}
+            onSeek={(t) => (phoneRemote.remote ? phoneRemote.seek(t) : handleSeek(t))}
             onPlayPause={togglePlayPause}
-            onNext={handleNext}
-            onPrev={handlePrev}
+            onNext={() => (phoneRemote.remote ? phoneRemote.next() : handleNext())}
+            onPrev={() => (phoneRemote.remote ? phoneRemote.previous() : handlePrev())}
             onPlayTrack={(t, q) => playTrack(t, q || queue)}
             onToggleShuffle={() => setIsShuffle(!isShuffle)}
             onToggleRepeat={cycleRepeat}

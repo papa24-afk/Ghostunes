@@ -47,7 +47,8 @@ import {
   Info,
   Compass,
   Plus,
-  Settings, ArrowUp, ArrowDown, ArrowUpRight, AlertCircle
+  Settings, ArrowUp, ArrowDown, ArrowUpRight, AlertCircle,
+  Smartphone,
 } from 'lucide-react';
 import { DownloadsView } from './DownloadsView';
 import { MusicMemoryView } from './MusicMemoryView';
@@ -67,6 +68,8 @@ import ghostIconSvg from '../assets/icon.svg';
 
 interface Props {
   track: Track | null;
+  /** Set while the music is on a phone: the controls act on that phone. */
+  remoteDevice?: { name: string; output?: string | null; onPlayHere: () => void } | null;
   keyboardShortcutsEnabled?: boolean;
   currentTime: number;
   duration: number;
@@ -176,6 +179,7 @@ interface Props {
 
 export const DesktopPlayerView: React.FC<Props> = ({
   track,
+  remoteDevice = null,
   keyboardShortcutsEnabled = true,
   currentTime,
   duration,
@@ -2006,6 +2010,13 @@ export const DesktopPlayerView: React.FC<Props> = ({
       {(playbackStatus === 'loading' || playbackStatus === 'buffering') && (
         <div className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden z-50 pointer-events-none">
           <div className="w-full h-full bg-gradient-to-r from-transparent via-[#e0536c] to-transparent animate-pulse" />
+        </div>
+      )}
+      {remoteDevice && (
+        <div className="relative z-40 w-full shrink-0 flex items-center justify-center gap-3 bg-[#e0536c] text-black text-xs font-semibold px-4 py-1">
+          <Smartphone className="w-3.5 h-3.5" />
+          <span className="truncate">Playing on {remoteDevice.name}{remoteDevice.output ? ` · ${remoteDevice.output}` : ''}</span>
+          <button onClick={remoteDevice.onPlayHere} className="ml-1 px-2.5 py-0.5 rounded-full bg-black/80 text-white hover:bg-black cursor-pointer">Play here</button>
         </div>
       )}
       <footer className="relative z-40 w-full shrink-0 bg-[#09090b]/95 backdrop-blur-2xl border-t border-white/[0.08] px-6 sm:px-10 py-2.5 flex items-center justify-between gap-4 sm:gap-6 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] pointer-events-auto">
