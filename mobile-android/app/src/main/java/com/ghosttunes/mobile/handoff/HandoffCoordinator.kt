@@ -170,7 +170,9 @@ class HandoffCoordinator @Inject constructor(
         }
         val snapshot = buildSnapshot(state.queue, index, positionSec, deviceName) ?: return
 
-        val response = withContext(Dispatchers.IO) { api.push(PushRequest(snapshot)) }
+        // Hard limits on every call: a stale connection fails in seconds, never hangs a shake.
+        val response = withTimeoutOrNull(CALL_TIMEOUT_MS) { withContext(Dispatchers.IO) { api.push(PushRequest(snapshot)) } }
+            ?: run { reconnectSoon(); show(HandoffStatus.Failed(UNREACHABLE)); return }
         if (response.code() == 409) {
             show(HandoffStatus.Failed(DESKTOP_OFFLINE))
             return
@@ -187,7 +189,7 @@ class HandoffCoordinator @Inject constructor(
         val result = withTimeoutOrNull(PUSH_TIMEOUT_MS) {
             while (true) {
                 delay(150)
-                val s = runCatching { withContext(Dispatchers.IO) { api.handoffStatus(id) } }.getOrNull() ?: continue
+                val s = withTimeoutOrNull(2_500) { runCatching { withContext(Dispatchers.IO) { api.handoffStatus(id) } }.getOrNull() } ?: continue
                 if (s.status == "playing" || s.status == "failed") return@withTimeoutOrNull s
             }
             @Suppress("UNREACHABLE_CODE") null
@@ -200,7 +202,7 @@ class HandoffCoordinator @Inject constructor(
             }
             "failed" -> show(HandoffStatus.Failed("Your PC couldn't play this song."))
             else -> {
-                runCatching { withContext(Dispatchers.IO) { api.release(ReleaseRequest("timeout")) } }
+                withTimeoutOrNull(CALL_TIMEOUT_MS) { runCatching { withContext(Dispatchers.IO) { api.release(ReleaseRequest("timeout")) } } }
                 show(HandoffStatus.Failed("Your PC didn't start in time."))
             }
         }
@@ -209,7 +211,8 @@ class HandoffCoordinator @Inject constructor(
     // ------------------------------------------------------------------ PULL
 
     private suspend fun pull() {
-        val desktop: DesktopState = withContext(Dispatchers.IO) { api.desktop() }
+        val desktop: DesktopState = withTimeoutOrNull(CALL_TIMEOUT_MS) { withContext(Dispatchers.IO) { api.desktop() } }
+            ?: run { reconnectSoon(); show(HandoffStatus.Failed(UNREACHABLE)); return }
         val receivedAt = SystemClock.elapsedRealtime()
         if (desktop.name.isNotBlank()) pcName = desktop.name
         if (!desktop.online) {
@@ -247,7 +250,7 @@ class HandoffCoordinator @Inject constructor(
             val wantMs = (target() * 1000).toLong()
             if (abs(controller.currentPosition - wantMs) > 250) controller.seekTo(wantMs)
         }
-        runCatching { withContext(Dispatchers.IO) { api.release(ReleaseRequest("pulled")) } }
+        withTimeoutOrNull(CALL_TIMEOUT_MS) { runCatching { withContext(Dispatchers.IO) { api.release(ReleaseRequest("pulled")) } } }
         context.vibrate(20)
         _status.value = HandoffStatus.Done("")
     }
@@ -381,7 +384,8 @@ class HandoffCoordinator @Inject constructor(
         val state = playback.state.value
         val (index, positionSec) = withContext(Dispatchers.Main) { controller.currentMediaItemIndex to controller.currentPosition / 1000.0 }
         val snapshot = buildSnapshot(state.queue, index, positionSec, deviceName) ?: return
-        val r = withContext(Dispatchers.IO) { api.devicePlay(device.id, PushRequest(snapshot)) }
+        val r = withTimeoutOrNull(CALL_TIMEOUT_MS) { withContext(Dispatchers.IO) { api.devicePlay(device.id, PushRequest(snapshot)) } }
+            ?: run { show(HandoffStatus.Failed("${device.name} isn't reachable.")); return }
         if (!r.isSuccessful) { show(HandoffStatus.Failed("${device.name} isn't reachable.")); return }
         _transfers.tryEmit(Transfer.ToPc(snapshot.track))
         context.vibrate(20)
@@ -415,6 +419,11 @@ class HandoffCoordinator @Inject constructor(
         context.vibrate(20)
     }
 
+    /** A request timed out: the saved PC address may be stale, so look for the PC again in the background. */
+    private fun reconnectSoon() {
+        scope.launch { runCatching { locator.ensure(allowScan = true) } }
+    }
+
     /** Music arrived from another device: play the "drops in" animation. */
     fun announceArrival(track: Track) {
         _transfers.tryEmit(Transfer.ToPhone(track))
@@ -425,6 +434,8 @@ class HandoffCoordinator @Inject constructor(
         private const val TAG = "GhosttunesHandoff"
         const val DEBOUNCE_MS = 2_000L
         const val PUSH_TIMEOUT_MS = 15_000L
+        /** Longest any single transfer request may take. */
+        const val CALL_TIMEOUT_MS = 4_000L
         const val PULL_TIMEOUT_MS = 15_000L
         const val START_LATENCY_SEC = 0.35
         const val MAX_QUEUE = 300

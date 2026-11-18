@@ -5,7 +5,7 @@ import { listPhones, sendToPhone, updatePhoneState } from './serverProximity.js'
 
 const ACTIONS = ['play', 'pause', 'toggle', 'next', 'previous', 'seek', 'sendToPc'];
 
-export function registerDeviceRoutes(app) {
+export function registerDeviceRoutes(app, { warmTrack = () => {} } = {}) {
   app.get('/api/devices', (req, res) => {
     const pc = getDesktop();
     res.json({
@@ -23,6 +23,12 @@ export function registerDeviceRoutes(app) {
     if (!/^[0-9a-f]{8}$/.test(id)) return res.status(400).json({ error: 'invalid_id' });
     const np = req.body?.nowPlaying ? sanitizeSnapshot(req.body.nowPlaying) : null;
     updatePhoneState(id, req.body?.name, np, req.body?.output);
+    // Get the phone's song (and the next one) ready on this PC, so a shake starts it here instantly.
+    if (np?.track?.id) {
+      warmTrack(np.track.id);
+      const next = np.queue?.[np.queueIndex + 1];
+      if (next?.id) warmTrack(next.id);
+    }
     res.json({ ok: true });
   });
 

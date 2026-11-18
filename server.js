@@ -666,17 +666,28 @@ app.get('/api/album', async (req, res) => {
 // In-memory stream info cache to minimize metadata roundtrips for range requests
 const ytdlInfoCache = new Map();
 
+const ytdlInfoInflight = new Map();
 async function getYtdlTrackInfo(videoId) {
   const cached = ytdlInfoCache.get(videoId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.info;
   }
-  const info = await ytdlClient.getInfo(videoId);
-  ytdlInfoCache.set(videoId, {
-    info,
-    expiresAt: Date.now() + 2 * 3600 * 1000 // 2 hours
-  });
-  return info;
+  // Share one lookup between callers (a warm-up and the real play request can overlap).
+  if (ytdlInfoInflight.has(videoId)) return ytdlInfoInflight.get(videoId);
+  const pending = ytdlClient.getInfo(videoId)
+    .then(info => {
+      ytdlInfoCache.set(videoId, { info, expiresAt: Date.now() + 2 * 3600 * 1000 }); // 2 hours
+      return info;
+    })
+    .finally(() => ytdlInfoInflight.delete(videoId));
+  ytdlInfoInflight.set(videoId, pending);
+  return pending;
+}
+
+/** Look a song up ahead of time so playing it later starts in well under a second. */
+function warmTrack(videoId) {
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(String(videoId || ''))) return;
+  getYtdlTrackInfo(videoId).catch(() => {});
 }
 
 // 3. Audio Streaming Proxy with HTTP 206 Range Support powered by @distube/ytdl-core
@@ -2100,7 +2111,7 @@ app.get('/api/rooms/:roomId/sync', (req, res) => {
 
 // Tap / flick to transfer between phone and desktop (must be before the static catch-all)
 registerProximityRoutes(app); // before /api/handoff/:id
-registerDeviceRoutes(app);
+registerDeviceRoutes(app, { warmTrack });
 registerHandoffRoutes(app);
 // Ghosttunes Mobile additions: stream prepare, typed search, playlist details
 registerMobileRoutes(app, { getInnertube, getYtdlTrackInfo, chooseFormat, ytdlClient });
