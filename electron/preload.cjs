@@ -47,6 +47,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: (type) => ipcRenderer.invoke('ghosttunes:open-folder', type),
   openExternalUrl: (url) => ipcRenderer.invoke('ghosttunes:open-external-url', url),
 
+  // Windows taskbar: report playback (buttons + icon progress), receive button clicks
+  setPlaybackState: (state) => ipcRenderer.send('ghosttunes:playback-state', state),
+  onTaskbarAction: (callback) => {
+    const handler = (_event, action) => callback(action);
+    ipcRenderer.on('ghosttunes:taskbar-action', handler);
+    return () => ipcRenderer.removeListener('ghosttunes:taskbar-action', handler);
+  },
+
   // Progress Event Subscriptions
   onDownloadProgress: (callback) => {
     const handler = (_event, data) => callback(data);

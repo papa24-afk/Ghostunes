@@ -6,6 +6,7 @@ import { DesktopPlayerView } from './components/DesktopPlayerView';
 import { MobilePlayerView } from './components/MobilePlayerView';
 import { HandoffArrival, HandoffAnimation } from './components/HandoffArrival';
 import { DevicesPanel } from './components/DevicesPanel';
+import { CommandPalette, PaletteAction } from './components/CommandPalette';
 import { usePhoneRemote } from './services/phoneRemote';
 import { CinematicLyricsView } from './components/CinematicLyricsView';
 import { PlaylistModal } from './components/PlaylistModal';
@@ -2130,6 +2131,82 @@ export function App() {
     else if (!remoteTrackId && had && had !== currentTrackRef.current?.id && currentTrackRef.current) fetchLyrics(currentTrackRef.current);
   }, [remoteTrackId]);
 
+  // Sleep timer: fade out and stop at a set time, or when the current song ends.
+  const [sleepTimer, setSleepTimer] = useState<{ endsAt: number | null; endOfSong: boolean }>({ endsAt: null, endOfSong: false });
+  const sleepEndOfSongRef = useRef(false);
+  sleepEndOfSongRef.current = sleepTimer.endOfSong;
+  const setSleep = (choice: number | 'end' | null) => {
+    if (choice === null) setSleepTimer({ endsAt: null, endOfSong: false });
+    else if (choice === 'end') setSleepTimer({ endsAt: null, endOfSong: true });
+    else setSleepTimer({ endsAt: Date.now() + choice * 60_000, endOfSong: false });
+    showHandoffToast(choice === null ? 'Sleep timer off' : choice === 'end' ? 'Stopping at the end of this song' : `Stopping in ${choice} minutes`, 'info', 2200);
+  };
+  useEffect(() => {
+    if (!sleepTimer.endsAt) return;
+    const FADE_MS = 6000;
+    const timer = window.setTimeout(async () => {
+      const audio = audioRef.current;
+      if (audio && !audio.paused) {
+        await fadeOutAndPause(audio, FADE_MS);
+        setIsPlaying(false);
+      }
+      setSleepTimer({ endsAt: null, endOfSong: false });
+    }, Math.max(0, sleepTimer.endsAt - Date.now() - FADE_MS));
+    return () => window.clearTimeout(timer);
+  }, [sleepTimer.endsAt]);
+
+  // Ctrl+K quick search: play any song, open a playlist, or run an action, from anywhere.
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  useEffect(() => {
+    if (isStandaloneMiniWidget) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setIsPaletteOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isStandaloneMiniWidget]);
+  const paletteActions: PaletteAction[] = [
+    { id: 'toggle', label: isPlaying ? 'Pause' : 'Play', hint: 'Space', keywords: 'play pause resume stop', run: () => togglePlayPause() },
+    { id: 'next', label: 'Next song', hint: 'Shift + →', keywords: 'skip forward', run: () => (phoneRemote.remote ? phoneRemote.next() : handleNext()) },
+    { id: 'prev', label: 'Previous song', hint: 'Shift + ←', keywords: 'back', run: () => (phoneRemote.remote ? phoneRemote.previous() : handlePrev()) },
+    { id: 'lyrics', label: 'Show lyrics', keywords: 'words sing karaoke', run: () => setShowLyrics(true) },
+    { id: 'now', label: 'Go to Now Playing', keywords: 'current song', run: () => { setShowLyrics(false); setCurrentView('now-playing'); } },
+    { id: 'home', label: 'Go to Home', run: () => { setShowLyrics(false); setCurrentView('home'); } },
+    { id: 'explore', label: 'Go to Explore', keywords: 'browse genres search', run: () => { setShowLyrics(false); setCurrentView('explore'); } },
+    { id: 'library', label: 'Go to Library', keywords: 'playlists', run: () => { setShowLyrics(false); setCurrentView('library'); } },
+    { id: 'favorites', label: 'Go to Favourites', keywords: 'liked loved hearts', run: () => { setShowLyrics(false); setCurrentView('favorites'); } },
+    { id: 'downloads', label: 'Go to Downloads', keywords: 'offline', run: () => { setShowLyrics(false); setCurrentView('downloads'); } },
+    { id: 'shuffle', label: isShuffle ? 'Turn shuffle off' : 'Turn shuffle on', keywords: 'random mix', run: () => setIsShuffle(s => !s) },
+    { id: 'sleep30', label: 'Sleep timer: 30 minutes', keywords: 'stop bed night', run: () => setSleep(30) },
+    { id: 'sleepEnd', label: 'Sleep timer: end of this song', keywords: 'stop bed night', run: () => setSleep('end') },
+    ...(sleepTimer.endsAt || sleepTimer.endOfSong ? [{ id: 'sleepOff', label: 'Turn sleep timer off', keywords: 'cancel', run: () => setSleep(null) }] : []),
+  ];
+
+  // Windows taskbar: ⏮ ⏯ ⏭ under the thumbnail (same as the player bar, so they also drive a phone
+  // that has the music), and the song's progress on the taskbar icon.
+  const taskbarActionsRef = useRef({ toggle: () => {}, next: () => {}, previous: () => {} });
+  taskbarActionsRef.current = {
+    toggle: () => togglePlayPause(),
+    next: () => (phoneRemote.remote ? phoneRemote.next() : handleNext()),
+    previous: () => (phoneRemote.remote ? phoneRemote.previous() : handlePrev()),
+  };
+  useEffect(() => {
+    if (isStandaloneMiniWidget) return;
+    return window.electronAPI?.onTaskbarAction?.((action) => taskbarActionsRef.current[action]?.());
+  }, [isStandaloneMiniWidget]);
+  const shownPlaying = phoneRemote.remote ? phoneRemote.remote.nowPlaying.isPlaying : isPlaying;
+  const shownTime = phoneRemote.remote ? phoneRemote.positionNow() : currentTime;
+  const shownDuration = phoneRemote.remote ? phoneRemote.duration : duration;
+  const shownProgress = shownDuration > 0 ? Math.round((shownTime / shownDuration) * 200) / 200 : 0;
+  const hasShownTrack = Boolean(remoteTrack || currentTrack);
+  useEffect(() => {
+    if (isStandaloneMiniWidget) return;
+    window.electronAPI?.setPlaybackState?.({ hasTrack: hasShownTrack, isPlaying: shownPlaying, progress: shownProgress });
+  }, [hasShownTrack, shownPlaying, shownProgress, isStandaloneMiniWidget]);
+
   // Desktop: receive handoffs from the phone and report what we're playing.
   useEffect(() => {
     if (!isDesktopApp() || isStandaloneMiniWidget) return;
@@ -2412,6 +2489,8 @@ export function App() {
             currentTime={phoneRemote.remote ? phoneRemote.positionNow() : currentTime}
             duration={phoneRemote.remote ? phoneRemote.duration : duration}
             isPlaying={phoneRemote.remote ? phoneRemote.remote.nowPlaying.isPlaying : isPlaying}
+            sleepTimer={sleepTimer}
+            onSetSleepTimer={setSleep}
             remoteDevice={phoneRemote.remote ? { name: phoneRemote.remote.name, output: phoneRemote.remote.output, onPlayHere: phoneRemote.playHere } : null}
             lyrics={lyrics}
             plainLyrics={plainLyrics}
@@ -2729,6 +2808,18 @@ export function App() {
         onModeChange={(m) => setAutoplayMode(m as any)}
       />
 
+      {!isStandaloneMiniWidget && (
+        <CommandPalette
+          open={isPaletteOpen}
+          onClose={() => setIsPaletteOpen(false)}
+          actions={paletteActions}
+          playlists={playlists}
+          // Play just this song; up next fills with its radio (the artist + similar).
+          onPlayTrack={(t) => { setShowLyrics(false); playTrack(t, [t]); }}
+          onOpenPlaylist={(id) => { setShowLyrics(false); setSelectedPlaylistId(id); setCurrentView('library'); }}
+        />
+      )}
+
       {/* Connect: phones on this PC, their controls, and moving music either way */}
       {isDesktopApp() && (
         <DevicesPanel
@@ -2977,6 +3068,12 @@ export function App() {
           musicMemory.saveSessionSnapshot(snapshot.queue, snapshot.queueIndex, pendingResumeRef.current || e.currentTarget.currentTime);
         }}
         onEnded={() => {
+          // Sleep timer "end of this song": stop here instead of moving on.
+          if (sleepEndOfSongRef.current) {
+            setSleepTimer({ endsAt: null, endOfSong: false });
+            setIsPlaying(false);
+            return;
+          }
           // Smart Radio: Track completion in SQLite for positive weight
           if (currentTrackRef.current) {
             const dur = duration || 210;

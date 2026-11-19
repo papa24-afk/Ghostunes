@@ -70,6 +70,9 @@ import ghostIconSvg from '../assets/icon.svg';
 
 interface Props {
   track: Track | null;
+  /** Sleep timer: stop at a time (endsAt, ms) or at the end of the current song. */
+  sleepTimer?: { endsAt: number | null; endOfSong: boolean };
+  onSetSleepTimer?: (choice: number | 'end' | null) => void;
   /** Set while the music is on a phone: the controls act on that phone. */
   remoteDevice?: { name: string; output?: string | null; onPlayHere: () => void } | null;
   keyboardShortcutsEnabled?: boolean;
@@ -182,6 +185,8 @@ interface Props {
 export const DesktopPlayerView: React.FC<Props> = ({
   track,
   remoteDevice = null,
+  sleepTimer,
+  onSetSleepTimer,
   keyboardShortcutsEnabled = true,
   currentTime,
   duration,
@@ -2334,6 +2339,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
 
           {/* 3. RIGHT: Volume, Lyrics, Fullscreen */}
           <div className="flex items-center gap-2 sm:gap-3 sm:w-[200px] lg:w-[240px] justify-end flex-shrink-0">
+            {onSetSleepTimer && <SleepTimerButton timer={sleepTimer} onSet={onSetSleepTimer} />}
             {/* Volume Control with Burgundy Slider */}
             <div className="hidden sm:flex items-center gap-1.5 px-1 relative group">
               <button
@@ -2758,3 +2764,42 @@ export const DesktopPlayerView: React.FC<Props> = ({
     </div>
   );
 };
+
+/** Moon button: stop the music after a while, or at the end of this song (with a gentle fade). */
+function SleepTimerButton({ timer, onSet }: { timer?: { endsAt: number | null; endOfSong: boolean }; onSet: (choice: number | 'end' | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [, setTick] = useState(0);
+  const active = Boolean(timer?.endsAt || timer?.endOfSong);
+  useEffect(() => {
+    if (!timer?.endsAt) return;
+    const t = window.setInterval(() => setTick(n => n + 1), 15000);
+    return () => window.clearInterval(t);
+  }, [timer?.endsAt]);
+  const minutesLeft = timer?.endsAt ? Math.max(1, Math.ceil((timer.endsAt - Date.now()) / 60000)) : 0;
+  const label = timer?.endOfSong ? 'End of song' : minutesLeft ? `${minutesLeft} min` : '';
+  const choose = (c: number | 'end' | null) => { onSet(c); setOpen(false); };
+  return (
+    <div className="relative hidden sm:block">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`h-8 flex items-center gap-1 rounded-full transition-colors focus-visible:ring-1 focus-visible:ring-white/25 outline-none cursor-pointer ${active ? 'px-2 text-[#e0536c] bg-[#e0536c]/10' : 'w-8 justify-center text-zinc-400 hover:text-white hover:bg-white/10'}`}
+        title={active ? `Sleep timer: ${label}` : 'Sleep timer'}
+        aria-label="Sleep timer"
+        aria-expanded={open}
+      >
+        <Moon className="w-4 h-4" />
+        {active && <span className="text-[10px] font-semibold whitespace-nowrap">{label}</span>}
+      </button>
+      {open && (
+        <div className="absolute bottom-10 right-0 w-44 rounded-xl bg-[#141418] border border-white/10 shadow-2xl p-1 z-50" onMouseLeave={() => setOpen(false)}>
+          <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-zinc-400">Stop playing after</p>
+          {[15, 30, 45, 60].map(m => (
+            <button key={m} onClick={() => choose(m)} className="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5 rounded-lg cursor-pointer">{m} minutes</button>
+          ))}
+          <button onClick={() => choose('end')} className="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5 rounded-lg cursor-pointer">End of this song</button>
+          {active && <button onClick={() => choose(null)} className="w-full text-left px-3 py-1.5 text-xs text-[#e0536c] hover:bg-white/5 rounded-lg cursor-pointer">Turn off</button>}
+        </div>
+      )}
+    </div>
+  );
+}

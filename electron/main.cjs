@@ -7,6 +7,7 @@ const { registerPrivilegedSchemes, setupMediaProtocol } = require('./mediaProtoc
 const { GhosttunesDatabase } = require('./database.cjs');
 const { DownloadManager } = require('./downloadManager.cjs');
 const { AutoUpdaterManager } = require('./autoUpdaterManager.cjs');
+const { setupTaskbar } = require('./taskbar.cjs');
 
 // Must register privileged schemes before app is ready
 registerPrivilegedSchemes();
@@ -445,6 +446,9 @@ function setupIpcHandlers() {
 
   // Media protocol
   setupMediaProtocol(database, mediaDir, artworkDir);
+
+  // Taskbar thumbnail buttons + progress on the taskbar icon
+  setupTaskbar(() => mainWindow);
 
   // 1. Tracks & Offline
   ipcMain.handle('ghosttunes:get-local-track', async (_event, trackId) => {

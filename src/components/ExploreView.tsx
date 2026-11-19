@@ -115,24 +115,13 @@ const PlaylistCollage: React.FC<{ playlist: Playlist; isDataSaver?: boolean }> =
   }
 
   if (sampleTracks.length < 4) {
-    return (
-      <img
-        src={getOptimizedArtwork(sampleTracks[0].thumbnail, isDataSaver)}
-        alt={playlist.name}
-        className="w-full h-full object-cover"
-      />
-    );
+    return <Artwork src={getOptimizedArtwork(sampleTracks[0].thumbnail, isDataSaver)} trackId={sampleTracks[0].id} alt={playlist.name} isDataSaver={isDataSaver} />;
   }
 
   return (
     <div className="w-full h-full grid grid-cols-2 grid-rows-2">
       {sampleTracks.map((t, idx) => (
-        <img
-          key={idx}
-          src={getOptimizedArtwork(t.thumbnail, isDataSaver)}
-          alt=""
-          className="w-full h-full object-cover"
-        />
+        <Artwork key={idx} src={getOptimizedArtwork(t.thumbnail, isDataSaver)} trackId={t.id} alt="" isDataSaver={isDataSaver} />
       ))}
     </div>
   );
@@ -598,17 +587,7 @@ export const ExploreView: React.FC<Props> = ({
                     </button>
 
                     <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-800 border border-white/5 flex-shrink-0">
-                      <img
-                        src={t.local_artwork_url || getOptimizedArtwork(t.thumbnail, isDataSaver, t.id)}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          const img = e.currentTarget;
-                          if (t.id && !img.src.includes('/api/artwork/')) {
-                            img.src = `http://127.0.0.1:3001/api/artwork/${t.id}`;
-                          }
-                        }}
-                      />
+                      <Artwork src={getOptimizedArtwork(t.thumbnail, isDataSaver, t.id)} localSrc={t.local_artwork_url} trackId={t.id} alt="" isDataSaver={isDataSaver} />
                     </div>
 
                     <div className="min-w-0 flex-1">
@@ -1359,7 +1338,8 @@ export const ExploreView: React.FC<Props> = ({
               {visibleTracks.map((track, idx) => {
                 const isCurrent = currentTrack?.id === track.id;
                 const isTrackPlaying = isCurrent && isPlaying;
-                const highResCover = upgradeToHighResArtwork(track.thumbnail) || track.thumbnail;
+                // Cards are ~250px: 544px art is sharp (2x) and far lighter than 1080px, so a full grid loads reliably.
+                const highResCover = (upgradeToHighResArtwork(track.thumbnail) || track.thumbnail || '').replace(/=w1080-h1080/, '=w544-h544');
                 return (
                   <div
                     key={`${track.id}-${idx}`}
@@ -1368,12 +1348,9 @@ export const ExploreView: React.FC<Props> = ({
                       isCurrent ? 'border-rose-400 shadow-[0_0_20px_rgba(224,83,108,0.35)]' : 'border-white/5 hover:border-white/20'
                     }`}
                   >
-                    <img
-                      src={highResCover}
-                      alt={track.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
+                    <span className="block w-full h-full transition-transform duration-500 group-hover:scale-105">
+                      <Artwork src={highResCover} localSrc={track.local_artwork_url} trackId={track.id} alt={track.title} isDataSaver={isDataSaver} />
+                    </span>
 
                     {/* Dark gradient overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 via-45% to-transparent pointer-events-none" />

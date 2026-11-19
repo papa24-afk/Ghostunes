@@ -210,6 +210,8 @@ declare global {
     electronAPI?: {
       isElectron: boolean;
       platform: string;
+      setPlaybackState?: (state: { hasTrack: boolean; isPlaying: boolean; progress: number }) => void;
+      onTaskbarAction?: (callback: (action: 'toggle' | 'next' | 'previous') => void) => () => void;
       getLocalTrack: (trackId: string) => Promise<Track | null>;
       getAllDownloadedTracks: () => Promise<Track[]>;
       deleteDownload: (trackId: string) => Promise<{ success: boolean }>;
