@@ -31,6 +31,7 @@ import {
 import { getOptimizedArtwork, getThumbnailArtwork } from '../utils/artwork';
 import { TrackCollection } from './TrackCollection';
 import { Artwork } from './Artwork';
+import { MixesRow } from './MixesRow';
 import { ArtistAvatar } from './ArtistAvatar';
 import { upgradeToHighResArtwork } from '../utils/artwork';
 
@@ -1273,6 +1274,8 @@ export const ExploreView: React.FC<Props> = ({
          ========================================================================= */}
       {!busy && !searching && activeTab === 'explore' && visibleTracks.length > 0 && (
         <div className="space-y-6">
+          <MixesRow kind="personal" history={history} favorites={favorites} isDataSaver={isDataSaver} onPlay={(list) => onPlayTrack(list[0], list)} />
+          <MixesRow kind="moods" history={history} favorites={favorites} isDataSaver={isDataSaver} onPlay={(list) => onPlayTrack(list[0], list)} />
           <div className="relative group/carousel">
             {/* Carousel Navigation Chevrons */}
             <button
