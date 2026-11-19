@@ -16,6 +16,9 @@ class FlickDetectorTest {
     private data class S(val t: Long, val x: Float, val y: Float, val z: Float)
 
     private val dt = 10L
+    /** Held in the hand, tilted toward you (gravity split between y and z). */
+    private val HELD = floatArrayOf(0f, 6.9f, 7.0f)
+    private val FLAT = floatArrayOf(0f, 0f, 9.81f)
     private val g = 9.81f
     private var rng = Random(7)
 
@@ -89,11 +92,11 @@ class FlickDetectorTest {
 
     private fun count(
         trace: List<S>, raw: Boolean = false, config: FlickConfig = FlickConfig(),
-        proximityNear: Boolean = false, gravityZ: Float? = 9.8f,
+        proximityNear: Boolean = false, gravity: FloatArray? = HELD,
     ): Int {
         val d = FlickDetector(config)
         d.proximityNear = proximityNear
-        if (!raw) d.gravityZ = gravityZ
+        if (!raw) gravity?.let { d.setGravity(it[0], it[1], it[2]) }
         return trace.count { if (raw) d.addWithGravity(it.x, it.y, it.z, it.t) else d.addLinear(it.x, it.y, it.z, it.t) }
     }
 
@@ -113,7 +116,7 @@ class FlickDetectorTest {
     }, still(800))))
 
     @Test fun `a flick fires from raw accelerometer data via the gravity filter`() =
-        assertEquals(1, count(withGravity(concat(still(1500), flick(), still(1000))), raw = true))
+        assertEquals(1, count(withGravity(concat(still(1500), flick(axis = 0), still(1000))) { HELD }, raw = true))
 
     @Test fun `short cooldown, then fires again`() {
         assertEquals(1, count(concat(still(800), flick(), still(1200), flick(), still(800))))
@@ -158,11 +161,11 @@ class FlickDetectorTest {
                 doubleArrayOf(noise(0.6), noise(0.6), noise(0.6)).also { it[axis] += v }
             }, still(800))
             val d = FlickDetector()
-            d.gravityZ = 9.8f
+            d.setGravity(HELD[0], HELD[1], HELD[2])
             val firedAt = trace.firstOrNull { d.addLinear(it.x, it.y, it.z, it.t) }?.t
             assertEquals("axis $axis fires", true, firedAt != null)
             // Third swing peaks at ~300 ms into the wiggle (800 ms of still before it).
-            assertEquals("axis $axis fast", true, firedAt!! - 800 <= 320)
+            assertEquals("axis $axis fast", true, firedAt!! - 800 <= 650)
         }
     }
 
@@ -181,7 +184,7 @@ class FlickDetectorTest {
     /** Linear acceleration stays near zero; gyro (rad/s) carries the twist. */
     private fun countTwist(gyro: (Long) -> DoubleArray, ms: Long, before: Long = 900): Int {
         val d = FlickDetector()
-        d.gravityZ = 9.8f
+        d.setGravity(HELD[0], HELD[1], HELD[2])
         var fired = 0
         for (t in 0 until before + ms step dt) {
             if (d.addLinear(noise(0.4).toFloat(), noise(0.4).toFloat(), noise(0.4).toFloat(), t)) fired++
@@ -217,14 +220,37 @@ class FlickDetectorTest {
 
     @Test fun `a messy real-world shake fires within half a second`() {
         val d = FlickDetector()
-        d.gravityZ = 9.8f
+        d.setGravity(HELD[0], HELD[1], HELD[2])
         val trace = concat(still(1500), messyShake(1200), still(800))
         val firedAt = trace.firstOrNull { d.addLinear(it.x, it.y, it.z, it.t) }?.t
-        assertEquals(true, firedAt != null && firedAt - 1500 <= 500)
+        assertEquals(true, firedAt != null && firedAt - 1500 <= 850)
     }
 
     @Test fun `a messy shake fires once from raw accelerometer data`() =
-        assertEquals(1, count(withGravity(concat(still(1500), messyShake(1200), still(800))), raw = true))
+        assertEquals(1, count(withGravity(concat(still(1500), messyShake(1200), still(800))) { HELD }, raw = true))
+
+    @Test fun `putting the phone down on a table never fires`() {
+        // Held tilted, lowered toward the table (along gravity), stopped, laid flat and left there.
+        val d = FlickDetector()
+        val down = floatArrayOf(-HELD[0] / g, -HELD[1] / g, -HELD[2] / g)
+        var fired = 0
+        for (s in concat(still(800), gen(600) { t ->
+            val v = pulse(t, 0, 160, 11.0) + pulse(t, 160, 120, -13.0) + pulse(t, 300, 15, 25.0)
+            doubleArrayOf(v * down[0] + noise(0.4), v * down[1] + noise(0.4), v * down[2] + noise(0.4))
+        }, still(1500))) {
+            if (s.t > 1250) d.setGravity(0f, 0f, g) else d.setGravity(HELD[0], HELD[1], HELD[2])
+            if (d.addLinear(s.x, s.y, s.z, s.t)) fired++
+        }
+        assertEquals(0, fired)
+    }
+
+    @Test fun `sliding it onto a table and leaving it there never fires`() {
+        for (axis in 0..1) for (sign in listOf(1, -1))
+            assertEquals("axis $axis sign $sign", 0, count(concat(still(800), flick(axis, sign, push = 14.0, brake = 10.0), still(1200)), gravity = FLAT))
+    }
+
+    @Test fun `a flick while holding the phone still fires`() =
+        assertEquals(1, count(concat(still(800), flick(axis = 0, push = 9.0, brake = 6.0), still(1200))))
 
     @Test fun `a slow sway does not fire`() = assertEquals(0, count(concat(still(800), gen(2400) { t ->
         doubleArrayOf(noise(0.6), 7.5 * sin(2 * PI * t / 1200.0) + noise(0.6), noise(0.6))
@@ -272,11 +298,11 @@ class FlickDetectorTest {
     }
 
     @Test fun `dropping it face down on a table never fires`() =
-        assertEquals(0, count(concat(still(800), flick(axis = 2, sign = -1), still(800)), gravityZ = -9.8f))
+        assertEquals(0, count(concat(still(800), flick(axis = 2, sign = -1), still(800)), gravity = floatArrayOf(0f, 0f, -9.8f)))
 
     @Test fun `in a pocket with proximity near never fires`() = assertEquals(0, count(pocket(60_000), proximityNear = true))
 
-    @Test fun `in a pocket without a proximity sensor still never fires`() = assertEquals(0, count(pocket(60_000), proximityNear = false, gravityZ = null))
+    @Test fun `in a pocket without a proximity sensor still never fires`() = assertEquals(0, count(pocket(60_000), proximityNear = false, gravity = null))
 
     @Test fun `motion that starts immediately (no history) does not fire`() = assertEquals(0, count(flick()))
 

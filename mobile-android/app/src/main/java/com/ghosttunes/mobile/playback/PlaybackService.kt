@@ -63,6 +63,10 @@ class PlaybackService : MediaSessionService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
     private var session: MediaSession? = null
+    /** Shown in the notification / lock screen while this phone controls another device. */
+    private var remoteSession: MediaSession? = null
+    private var remotePlayer: RemotePlayer? = null
+    private lateinit var openApp: PendingIntent
     private var restoredQueue = false
     private var radioJob: Job? = null
     private var sleepJob: Job? = null
@@ -81,7 +85,7 @@ class PlaybackService : MediaSessionService() {
         player = playerFactory.create()
         player.addListener(listener)
 
-        val openApp = PendingIntent.getActivity(
+        openApp = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN_PLAYER, true)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -131,6 +135,8 @@ class PlaybackService : MediaSessionService() {
         }
         // While this phone is controlling another device, keep listening so a shake takes the music back.
         scope.launch { handoff.remote.map { it != null }.distinctUntilChanged().collect { updateBackgroundFlick() } }
+        // ...and the notification / lock screen show and control that device instead of this phone.
+        scope.launch { handoff.remote.collect { showRemote(it) } }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -148,6 +154,8 @@ class PlaybackService : MediaSessionService() {
         flickSensor?.stop()
         beacon.hold("playing", false)
         runCatching { unregisterReceiver(screenReceiver) }
+        remoteSession?.let { removeSession(it); it.release() }
+        remoteSession = null
         session?.run {
             player.release()
             release()
@@ -278,6 +286,31 @@ class PlaybackService : MediaSessionService() {
                 fadeOutAndPause(player, 3_000)
                 sleepTimer.cancel()
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ remote notification
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun showRemote(state: com.ghosttunes.mobile.handoff.RemoteState?) {
+        if (state != null) {
+            val rp = remotePlayer ?: RemotePlayer(handoff).also { remotePlayer = it }
+            rp.remote = state
+            if (remoteSession == null) {
+                // Hide this phone's paused card so only the device being controlled shows.
+                if (!player.isPlaying && player.playbackState != Player.STATE_IDLE) player.stop()
+                remoteSession = MediaSession.Builder(this, rp)
+                    .setId("remote")
+                    .setSessionActivity(openApp)
+                    .build()
+                    .also { addSession(it) }
+            }
+        } else if (remoteSession != null) {
+            remoteSession?.let { removeSession(it); it.release() }
+            remoteSession = null
+            remotePlayer?.remote = null
+            // Bring this phone's queue back (paused) so it can carry on here.
+            if (player.playbackState == Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
         }
     }
 

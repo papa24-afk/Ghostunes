@@ -81,7 +81,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -107,8 +109,11 @@ data class SearchState(
 class SearchViewModel @Inject constructor(
     private val music: MusicRepository,
     private val settings: SettingsRepository,
+    private val plays: com.ghosttunes.mobile.data.prefs.RecentSearchPlays,
     val json: Json,
 ) : ViewModel() {
+    /** Songs played from search, newest first. */
+    val recentPlays: StateFlow<List<Track>> = plays.tracks.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _state = MutableStateFlow(SearchState())
     val state: StateFlow<SearchState> = _state
     val recent = settings.settings
@@ -160,12 +165,19 @@ class SearchViewModel @Inject constructor(
     fun removeRecent(q: String) = viewModelScope.launch { settings.removeRecentSearch(q) }
     fun clearRecent() = viewModelScope.launch { settings.clearRecentSearches() }
     fun rememberQuery() = viewModelScope.launch { settings.addRecentSearch(_state.value.query) }
+    /** A song was played from search: remember it and the search that found it. */
+    fun played(t: Track) = viewModelScope.launch {
+        if (_state.value.query.isNotBlank()) settings.addRecentSearch(_state.value.query)
+        plays.add(t)
+    }
+    fun clearPlays() = viewModelScope.launch { plays.clear() }
 }
 
 @Composable
 fun SearchScreen(vm: SearchViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
     val settings by vm.recent.collectAsState()
+    val recentPlays by vm.recentPlays.collectAsState()
     val actions = LocalActions.current
     val bottom = LocalBottomPadding.current
     val focus = LocalFocusManager.current
@@ -186,10 +198,25 @@ fun SearchScreen(vm: SearchViewModel = hiltViewModel()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = Space.xs, bottom = bottom)) {
             when {
                 state.query.isBlank() -> {
+                    if (recentPlays.isNotEmpty()) {
+                        item(key = "ph") { ClearableHeader("From recent searches", onClear = { vm.clearPlays() }) }
+                        item(key = "plays") {
+                            LazyRow(contentPadding = PaddingValues(horizontal = Space.edge), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                                items(recentPlays, key = { "p-${it.id}" }) { t ->
+                                    ArtCard(
+                                        t.title,
+                                        listOf(t.artist, t.duration).filter { it.isNotBlank() }.joinToString(" · "),
+                                        trackArtModel(t, ArtworkUrls.Size.Card),
+                                        onClick = { vm.played(t); actions.play(listOf(t), 0, "Search") },
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (settings.recentSearches.isNotEmpty()) {
-                        item(key = "rh") { SectionHeader("Recent searches", action = "Clear", onAction = { vm.clearRecent() }) }
-                        items(settings.recentSearches.take(6), key = { "r-$it" }) { q ->
-                            SuggestionRow(q, Icons.Rounded.History, onClick = { vm.submit(q) }, onRemove = { vm.removeRecent(q) })
+                        item(key = "rh") { ClearableHeader("Recent searches", onClear = { vm.clearRecent() }) }
+                        items(settings.recentSearches.take(8), key = { "r-$it" }) { q ->
+                            SuggestionRow(q, Icons.Rounded.History, onClick = { focus.clearFocus(); vm.submit(q) }, onFill = { vm.onQuery(q) })
                         }
                     }
                     item(key = "bh") { SectionHeader("Browse") }
@@ -202,13 +229,13 @@ fun SearchScreen(vm: SearchViewModel = hiltViewModel()) {
                     }
                     if (state.loading || state.suggestions == null) items(6) { RowSkeleton() }
                 }
-                else -> resultItems(results, state.filter, vm.json, onPlay = { vm.rememberQuery() })
+                else -> resultItems(results, state.filter, vm.json, onPlay = { t -> vm.played(t) })
             }
         }
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(r: SearchAll, filter: Filter, json: Json, onPlay: () -> Unit) {
+private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(r: SearchAll, filter: Filter, json: Json, onPlay: (Track) -> Unit) {
     val empty = r.songs.isEmpty() && r.artists.isEmpty() && r.albums.isEmpty() && r.playlists.isEmpty()
     if (empty) {
         item(key = "none") { ErrorState("Check the spelling, or try fewer words.", null, title = "No results for \"${r.query}\"") }
@@ -254,9 +281,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(r: Search
 }
 
 @Composable
-private fun SongRow(t: Track, all: List<Track>, onPlay: () -> Unit) {
+private fun SongRow(t: Track, all: List<Track>, onPlay: (Track) -> Unit) {
     val actions = LocalActions.current
-    TrackRow(t, onClick = { onPlay(); actions.play(all, all.indexOf(t), "Search") }, subtitle = "Song · ${t.artist}", onMore = { actions.trackMenu(t) })
+    // Like the desktop: play just this song; up next fills with its radio (similar songs), not the other search hits.
+    TrackRow(t, onClick = { onPlay(t); actions.play(listOf(t), 0, "Search") }, subtitle = "Song · ${t.artist}", onMore = { actions.trackMenu(t) })
 }
 
 @Composable
@@ -297,7 +325,7 @@ private fun ListRow(title: String, subtitle: String, art: String?, circle: Boole
 @Composable private fun PlaylistListRow(p: com.ghosttunes.mobile.data.model.PlaylistRef) { val n = LocalActions.current; ListRow(p.title, listOf("Playlist", p.author).filter { it.isNotBlank() }.joinToString(" · "), p.thumbnail, false) { n.openPlaylist(p.id) } }
 
 @Composable
-private fun TopResultCard(type: String, item: kotlinx.serialization.json.JsonObject, json: Json, songs: List<Track>, onPlay: () -> Unit) {
+private fun TopResultCard(type: String, item: kotlinx.serialization.json.JsonObject, json: Json, songs: List<Track>, onPlay: (Track) -> Unit) {
     val actions = LocalActions.current
     val (title, subtitle, art, circle) = when (type) {
         "artist" -> json.decodeFromJsonElement<ArtistRef>(item).let { Quad(it.name, "Artist", it.avatar, true) }
@@ -310,7 +338,7 @@ private fun TopResultCard(type: String, item: kotlinx.serialization.json.JsonObj
         when (type) {
             "artist" -> json.decodeFromJsonElement<ArtistRef>(item).let { actions.openArtist(it.id, it.name) }
             "album" -> actions.openAlbum(json.decodeFromJsonElement<AlbumRef>(item).id)
-            else -> json.decodeFromJsonElement<Track>(item).let { t -> onPlay(); actions.play(listOf(t) + songs.filter { it.id != t.id }, 0, "Search") }
+            else -> json.decodeFromJsonElement<Track>(item).let { t -> onPlay(t); actions.play(listOf(t), 0, "Search") }
         }
     }
     SectionHeader("Top result")
@@ -332,6 +360,18 @@ private fun TopResultCard(type: String, item: kotlinx.serialization.json.JsonObj
             Text(subtitle, style = TypeScale.body, color = GT.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (type == "song") PlayButton(false, onClick = onOpen, size = 48.dp)
+    }
+}
+
+/** Section title with an ✕ that clears the section. */
+@Composable
+private fun ClearableHeader(title: String, onClear: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = Space.edge, end = Space.xxs, top = Space.lg, bottom = Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = TypeScale.title, color = GT.Text, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        IconButton(onClick = onClear) { Icon(Icons.Rounded.Close, "Clear $title", tint = GT.TextSecondary) }
     }
 }
 

@@ -95,7 +95,7 @@ class FlickSensor(
     override fun onSensorChanged(event: SensorEvent) {
         when (event.sensor.type) {
             Sensor.TYPE_PROXIMITY -> detector.proximityNear = event.values[0] < (proximity?.maximumRange ?: 5f) * 0.5f
-            Sensor.TYPE_GRAVITY -> detector.gravityZ = event.values[2]
+            Sensor.TYPE_GRAVITY -> detector.setGravity(event.values[0], event.values[1], event.values[2])
             Sensor.TYPE_GYROSCOPE -> {
                 if (detector.addGyro(event.values[0], event.values[1], event.values[2], event.timestamp / 1_000_000)) {
                     context.vibrate(70)

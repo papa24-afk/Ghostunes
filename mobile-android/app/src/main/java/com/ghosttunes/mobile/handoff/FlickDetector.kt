@@ -59,6 +59,17 @@ data class FlickConfig(
     val energyWindowMs: Long = 500,
     val energyMinSpanMs: Long = 300,
     val energyCalmMean: Float = 5f,
+    /**
+     * Putting the phone down looks like a flick (push, sudden stop). So a detection only counts if,
+     * [confirmMs] later, the phone isn't lying flat and still (on a table)...
+     */
+    val confirmMs: Long = 300,
+    val restMax: Float = 0.8f,
+    val flatGravity: Float = 9.0f,
+    /** ...and a flick that's mostly straight up or down (putting down, picking up) never counts. */
+    val verticalCos: Float = 0.88f,
+    /** Lying flat but still settling: wait up to this long for it to come to rest. */
+    val settleMaxMs: Long = 700,
     val twistSwings: Int = 3,
     /**
      * The phone must be fairly steady before the push (rejects walking, running, pockets):
@@ -102,6 +113,17 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
     var proximityNear: Boolean = false
     /** Latest gravity along the screen normal (+9.8 face up, -9.8 face down). Null if unknown. */
     var gravityZ: Float? = null
+    /** Latest full gravity vector (phone axes), for telling vertical moves apart. Null if unknown. */
+    private var gravityVec: FloatArray? = null
+
+    fun setGravity(x: Float, y: Float, z: Float) {
+        gravityVec = floatArrayOf(x, y, z)
+        gravityZ = z
+    }
+
+    // A detection waiting for the "not just put down" check.
+    private var pendingAt = -1L
+    private var pendingBy = ""
 
     /** Which detector fired last ("flick", "swing", "energy", "twist"), for the debug screen and tests. */
     var lastFiredBy: String = ""
@@ -120,6 +142,36 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         twistSwings.reset()
         calm = false
         longHistory.clear()
+        pendingAt = -1L
+    }
+
+    /** A detector fired: hold it until we know the phone wasn't simply put down. */
+    private fun propose(by: String, tMs: Long): Boolean {
+        pendingAt = tMs
+        pendingBy = by
+        pushing = false
+        moveSwings.reset()
+        twistSwings.reset()
+        lastFiredAt = tMs // starts the cooldown so nothing else proposes meanwhile
+        return false
+    }
+
+    private fun lyingFlat(): Boolean = gravityZ?.let { kotlin.math.abs(it) >= config.flatGravity } ?: false
+
+    /** Lying flat and still for the last moment: it was put on a table, not flicked. */
+    private fun restingFlat(tMs: Long): Boolean {
+        if (!lyingFlat()) return false
+        val recent = history.filter { it.t >= tMs - 200 }
+        return recent.isNotEmpty() && recent.all { it.magnitude < config.restMax }
+    }
+
+    /** Mostly along gravity (straight up or down). */
+    private fun vertical(vx: Float, vy: Float, vz: Float): Boolean {
+        val g = gravityVec ?: return false
+        val gm = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
+        val vm = sqrt(vx * vx + vy * vy + vz * vz)
+        if (gm < 1f || vm < 1e-3f) return false
+        return kotlin.math.abs((vx * g[0] + vy * g[1] + vz * g[2]) / (gm * vm)) > config.verticalCos
     }
 
     /** Linear acceleration sample (gravity removed). Returns true when a flick completes. */
@@ -144,6 +196,18 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         if (firstSampleAt < 0) firstSampleAt = tMs
         val warmedUp = tMs - firstSampleAt >= c.quietGapMs + c.quietWindowMs
 
+        if (pendingAt >= 0) {
+            if (tMs - pendingAt < c.confirmMs) return false
+            val by = pendingBy
+            if (blocked() || restingFlat(tMs)) { pendingAt = -1L; return false } // put down / pocketed: not a transfer
+            // Flat (likely on a table) but still settling: give it a moment before deciding.
+            if (lyingFlat() && tMs - pendingAt < c.settleMaxMs) return false
+            pendingAt = -1L
+            lastFiredBy = by
+            lastFiredAt = tMs
+            return true
+        }
+
         if (tMs - lastFiredAt < c.cooldownMs) {
             pushing = false
             moveSwings.reset()
@@ -152,20 +216,8 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         }
 
         calm = warmedUp && max < c.calmPeak && mean < c.calmMean
-        if (energyShake(x, y, z, m, tMs) && !blocked()) {
-            lastFiredBy = "energy"
-            pushing = false
-            moveSwings.reset()
-            twistSwings.reset()
-            lastFiredAt = tMs
-            return true
-        }
-        if (moveSwings.add(x, y, z, m, tMs, c.shakeThreshold, c.shakeSwings, calm) && !blocked()) {
-            lastFiredBy = "swing"
-            pushing = false
-            lastFiredAt = tMs
-            return true
-        }
+        if (energyShake(x, y, z, m, tMs) && !blocked()) return propose("energy", tMs)
+        if (moveSwings.add(x, y, z, m, tMs, c.shakeThreshold, c.shakeSwings, calm) && !blocked()) return propose("swing", tMs)
 
         if (pushing) {
             if (tMs - pushStartedAt > c.brakeWindowMs) {
@@ -196,10 +248,8 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
             }
             if (along <= -c.brakeThreshold && m > 0f && along / m <= c.oppositeCos) {
                 pushing = false
-                if (blocked()) return false
-                lastFiredBy = "flick"
-                lastFiredAt = tMs
-                return true
+                if (blocked() || vertical(dir[0], dir[1], dir[2])) return false
+                return propose("flick", tMs)
             }
             return false
         }
@@ -248,12 +298,9 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         val c = config
         if (tMs - lastFiredAt < c.cooldownMs) { twistSwings.reset(); return false }
         val w = sqrt(x * x + y * y + z * z)
+        if (pendingAt >= 0) return false
         if (twistSwings.add(x, y, z, w, tMs, c.twistThreshold, c.twistSwings, calm) && !blocked()) {
-            lastFiredBy = "twist"
-            pushing = false
-            moveSwings.reset()
-            lastFiredAt = tMs
-            return true
+            propose("twist", tMs) // confirmed on a following acceleration sample
         }
         return false
     }
@@ -313,6 +360,7 @@ class FlickDetector(var config: FlickConfig = FlickConfig()) {
         g[1] = a * g[1] + (1 - a) * y
         g[2] = a * g[2] + (1 - a) * z
         gravityZ = g[2]
+        gravityVec = floatArrayOf(g[0], g[1], g[2])
         return addLinear(x - g[0], y - g[1], z - g[2], tMs)
     }
 

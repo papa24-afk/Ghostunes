@@ -49,7 +49,9 @@ import {
   Plus,
   Settings, ArrowUp, ArrowDown, ArrowUpRight, AlertCircle,
   Smartphone,
+  ArrowUpLeft,
 } from 'lucide-react';
+import { addRecentPlay, addRecentQuery, clearRecentPlays, clearRecentQueries, getRecentPlays, getRecentQueries } from '../services/searchHistory';
 import { DownloadsView } from './DownloadsView';
 import { MusicMemoryView } from './MusicMemoryView';
 import { ArtistProfileView } from './ArtistProfileView';
@@ -287,6 +289,21 @@ export const DesktopPlayerView: React.FC<Props> = ({
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [searchRecommended, setSearchRecommended] = useState<any[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<string[]>(getRecentQueries);
+  const [recentPlays, setRecentPlays] = useState<Track[]>(getRecentPlays);
+  const refreshRecent = () => { setRecentQueries(getRecentQueries()); setRecentPlays(getRecentPlays()); };
+  /** Playing from search results: remember the song and the search that found it. */
+  const playFromView = (t: Track, q?: Track[]) => {
+    if (currentView === 'explore' && searchQuery.trim()) {
+      addRecentQuery(searchQuery);
+      addRecentPlay(t);
+      refreshRecent();
+      // Play just this song; up next fills with its radio (the artist + similar), not the other search hits.
+      onPlayTrack(t, [t]);
+      return;
+    }
+    onPlayTrack(t, q);
+  };
 
   useEffect(() => {
     if (!searchQuery || searchQuery.trim().length < 2) {
@@ -760,6 +777,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
             onSubmit={(e) => {
               e.preventDefault();
               if (searchQuery.trim()) {
+                addRecentQuery(searchQuery);
+                refreshRecent();
                 onViewChange('explore');
               }
             }} 
@@ -776,9 +795,64 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   onViewChange('explore');
                 }
               }}
+              onFocus={() => { refreshRecent(); setIsSearchFocused(true); }}
+              onBlur={() => setIsSearchFocused(false)}
               placeholder="Search songs and artists…"
               className="w-full bg-[#141417] hover:bg-[#18181c] focus:bg-[#151518] border border-white/10 focus:border-white/30 rounded-full pl-9 pr-9 py-1.5 text-xs sm:text-sm text-white placeholder-zinc-500 outline-none transition-all shadow-inner"
             />
+            {isSearchFocused && !searchQuery.trim() && (recentPlays.length > 0 || recentQueries.length > 0) && (
+              <div
+                className="absolute left-0 right-0 top-full mt-2 z-[70] rounded-2xl bg-[#121215] border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.7)] p-3 max-h-[70vh] overflow-y-auto"
+                onMouseDown={(e) => e.preventDefault() /* keep the search box focused while clicking here */}
+              >
+                {recentPlays.length > 0 && (
+                  <section>
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <h3 className="text-sm font-semibold text-white">From recent searches</h3>
+                      <button type="button" onClick={() => { clearRecentPlays(); refreshRecent(); }} className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 cursor-pointer" title="Clear" aria-label="Clear songs from recent searches"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                      {recentPlays.map((t, i) => (
+                        <button
+                          type="button"
+                          key={t.id}
+                          onClick={() => { setIsSearchFocused(false); (document.activeElement as HTMLElement | null)?.blur(); onPlayTrack(t, recentPlays.slice(i).concat(recentPlays.slice(0, i))); }}
+                          className="w-[112px] flex-shrink-0 text-left group cursor-pointer"
+                          title={`${t.title} · ${t.artist}`}
+                        >
+                          <div className="w-[112px] h-[112px] rounded-xl overflow-hidden bg-zinc-900 border border-white/10 group-hover:border-white/30 transition-colors">
+                            <Artwork src={t.thumbnail} trackId={t.id} alt={t.title} isDataSaver={isDataSaver} />
+                          </div>
+                          <p className="mt-1.5 text-xs font-semibold text-white truncate">{t.title}</p>
+                          <p className="text-[11px] text-zinc-400 truncate">{[t.artist, t.duration].filter(Boolean).join(' · ')}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {recentQueries.length > 0 && (
+                  <section className={recentPlays.length > 0 ? 'mt-2' : ''}>
+                    <div className="flex items-center justify-between px-1 mb-1">
+                      <h3 className="text-sm font-semibold text-white">Recent searches</h3>
+                      <button type="button" onClick={() => { clearRecentQueries(); refreshRecent(); }} className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 cursor-pointer" title="Clear" aria-label="Clear recent searches"><X className="w-4 h-4" /></button>
+                    </div>
+                    {recentQueries.map(q => (
+                      <div key={q} className="flex items-center rounded-lg hover:bg-white/5">
+                        <button
+                          type="button"
+                          onClick={() => { addRecentQuery(q); onSearchChange(q); onViewChange('explore'); setIsSearchFocused(false); (document.activeElement as HTMLElement | null)?.blur(); }}
+                          className="flex-1 min-w-0 flex items-center gap-3 px-2 py-2 text-left cursor-pointer"
+                        >
+                          <History className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                          <span className="text-sm text-zinc-200 truncate">{q}</span>
+                        </button>
+                        <button type="button" onClick={() => onSearchChange(q)} className="p-2 text-zinc-400 hover:text-white cursor-pointer" title="Edit this search" aria-label={`Edit search: ${q}`}><ArrowUpLeft className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </section>
+                )}
+              </div>
+            )}
             {searchQuery && (
               <button
                 type="button"
@@ -1966,7 +2040,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
           selectedPlaylistId={selectedPlaylistId}
           onSelectPlaylist={onSelectPlaylist}
           activeTab={currentView === 'favorites' ? 'favorites' : currentView === 'library' ? 'library' : 'explore'}
-          onPlayTrack={onPlayTrack}
+          onPlayTrack={playFromView}
           onTogglePlayPause={onPlayPause}
           onToggleFavorite={onToggleFavorite || onToggleLike}
           onOpenAddToPlaylist={onOpenAddToPlaylist}

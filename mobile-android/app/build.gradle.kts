@@ -26,8 +26,8 @@ android {
         applicationId = "com.ghosttunes.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.5.5"
+        versionCode = 15
+        versionName = "1.6.1"
         buildConfigField("String", "DEFAULT_SERVER", "\"$defaultServer\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

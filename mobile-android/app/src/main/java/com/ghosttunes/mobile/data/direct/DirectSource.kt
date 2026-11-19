@@ -288,18 +288,33 @@ class DirectSource(baseClient: OkHttpClient, private val json: Json) {
      * else more songs by the same artist.
      */
     fun radio(seed: Track): List<Track> {
-        fun clean(list: List<Track>) = list.filter { it.id != seed.id && (it.durationSeconds == 0 || it.durationSeconds in 60..900) }.distinctBy { it.id }.take(25)
+        // No repeats: drop other versions of the seed song (lyric/live/slowed uploads...) and of each other.
+        fun clean(list: List<Track>): List<Track> {
+            val seen = mutableSetOf(songKey(seed.title))
+            return list.filter { it.id != seed.id && (it.durationSeconds == 0 || it.durationSeconds in 60..900) }
+                .distinctBy { it.id }
+                .filter { seen.add(songKey(it.title)) }
+                .take(25)
+        }
+        val artist = seed.artist.substringBefore(",").substringBefore(" & ").trim()
+        // Like the desktop's "balanced" radio: the artist's own songs alternating with similar artists.
+        fun balanced(mix: List<Track>): List<Track> {
+            val fromArtist = mix.count { sameArtist(it.artist, artist) }
+            val extra = if (fromArtist >= 4 || artist.isBlank()) emptyList()
+            else runCatching { songs(artist, 15) }.getOrDefault(emptyList())
+            return clean(balanceRadio(artist, mix, extra))
+        }
         runCatching {
             val url = "https://www.youtube.com/watch?v=${seed.id}&list=RDAMVM${seed.id}"
             val info = PlaylistInfo.getInfo(yt, url)
             clean(info.relatedItems.mapNotNull { toTrack(it) })
-        }.getOrNull()?.takeIf { it.size >= 5 }?.let { return it }
+        }.getOrNull()?.takeIf { it.size >= 5 }?.let { return balanced(it) }
         runCatching {
             val info = StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=${seed.id}")
             cache(seed.id, info)
             clean(info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { toTrack(it) })
-        }.getOrNull()?.takeIf { it.size >= 5 }?.let { return it }
-        return clean(songs(seed.artist.substringBefore(",").trim(), 30).shuffled())
+        }.getOrNull()?.takeIf { it.size >= 5 }?.let { return balanced(it) }
+        return clean(songs(artist, 30).shuffled())
     }
 
     fun avatar(name: String): String? =
@@ -364,4 +379,40 @@ class DirectSource(baseClient: OkHttpClient, private val json: Json) {
     companion object {
         @Volatile private var initialized = false
     }
+}
+
+/** "Blinding Lights (Official Audio)", "The Weeknd - Blinding Lights [Lyrics]" and "blinding lights slowed" are one song. */
+internal fun songKey(title: String): String {
+    var t = title.lowercase()
+    t = t.replace(Regex("""[(\[{].*?[)\]}]"""), " ")
+    // Cut at the first "extra" word (whole words only, so "Alive" or "Discover" stay intact).
+    t = t.replace(Regex("""\b(official|music video|video|audio|lyrics?|visuali[sz]er|hd|hq|4k|live|slowed|reverb|sped up|nightcore|remix|cover|version|feat|ft)\b.*"""), " ")
+    // "Artist - Title": keep the title part (unless nothing is left after the dash).
+    if (" - " in t) t = t.substringAfter(" - ").ifBlank { t.substringBefore(" - ") }
+    return t.replace(Regex("""[^\p{L}\p{N}]+"""), "").ifBlank { title.lowercase() }
+}
+
+private fun artistKey(name: String) = name.lowercase().replace(Regex("""[^\p{L}\p{N}]+"""), "")
+
+/** "The Weeknd", "The Weeknd & Daft Punk", "TheWeekndVEVO" all count as The Weeknd. */
+internal fun sameArtist(candidate: String, artist: String): Boolean {
+    val a = artistKey(artist)
+    return a.isNotEmpty() && artistKey(candidate).contains(a)
+}
+
+/**
+ * Up next for a song: alternate the artist's own songs with similar artists (mix order kept),
+ * topping up the artist's side from [extraFromArtist] when the mix has few of them.
+ */
+internal fun balanceRadio(artist: String, mix: List<Track>, extraFromArtist: List<Track>): List<Track> {
+    val own = (mix.filter { sameArtist(it.artist, artist) } + extraFromArtist.filter { sameArtist(it.artist, artist) })
+        .distinctBy { it.id }
+    val others = mix.filter { !sameArtist(it.artist, artist) }
+    val out = mutableListOf<Track>()
+    val n = maxOf(own.size, others.size)
+    for (i in 0 until n) {
+        own.getOrNull(i)?.let { out += it }
+        others.getOrNull(i)?.let { out += it }
+    }
+    return out
 }

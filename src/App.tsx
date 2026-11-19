@@ -1496,7 +1496,7 @@ export function App() {
     if (autoplayRef.current && nextQueue.length <= 1) {
       (async () => {
         try {
-          const radioRes = await fetch(getApiUrl(`/api/smart-radio?id=${encodeURIComponent(track.id)}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&mode=similar`));
+          const radioRes = await fetch(getApiUrl(`/api/smart-radio?id=${encodeURIComponent(track.id)}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&mode=balanced`)); // the artist's songs alternating with similar artists
           if (radioRes.ok) {
             const radioData = await radioRes.json();
             const radioTracks: Track[] = (radioData.tracks || []).map((t: any) => ({
