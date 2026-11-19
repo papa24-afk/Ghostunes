@@ -103,10 +103,18 @@ function currentPresence(now = Date.now()) {
 // A friendly PC name: the laptop/desktop model ("HP Laptop 14-dk1xxx" -> "HP Laptop 14"), else the hostname.
 let pcName = os.hostname();
 if (process.platform === 'win32') {
+  // The PC's model ("HP Laptop 14-dk1xxx" -> "HP Laptop 14"). Read from the registry first (instant, no
+  // PowerShell, which can be slow or hang on some PCs), then PowerShell as a fallback.
+  const clean = (raw) => String(raw || '').trim().replace(/[-\s]*[a-z0-9]*x{2,}[a-z0-9]*$/i, '').trim();
+  const usable = (m) => m && !/system product name|to be filled|default string|^none$/i.test(m);
   import('child_process').then(({ execFile }) => {
-    execFile('powershell', ['-NoProfile', '-Command', '(Get-CimInstance Win32_ComputerSystem).Model'], { windowsHide: true, timeout: 8000 }, (err, out) => {
-      const model = String(out || '').trim().replace(/[-\s]*[a-z0-9]*x{2,}[a-z0-9]*$/i, '').trim();
-      if (!err && model && !/system product name|to be filled|default string/i.test(model)) pcName = model;
+    execFile('reg', ['query', String.raw`HKLM\HARDWARE\DESCRIPTION\System\BIOS`, '/v', 'SystemProductName'], { windowsHide: true, timeout: 4000 }, (err, out) => {
+      const m = clean(String(out || '').match(/SystemProductName\s+REG_SZ\s+(.+)/)?.[1]);
+      if (!err && usable(m)) { pcName = m; return; }
+      execFile('powershell', ['-NoProfile', '-Command', '(Get-CimInstance Win32_ComputerSystem).Model'], { windowsHide: true, timeout: 8000 }, (err2, out2) => {
+        const model = clean(out2);
+        if (!err2 && usable(model)) pcName = model;
+      });
     });
   }).catch(() => {});
 }
