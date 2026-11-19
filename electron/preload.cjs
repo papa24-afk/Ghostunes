@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   recordPlay: (entry) => ipcRenderer.invoke('ghosttunes:record-play', entry),
   getListeningHistory: (params) => ipcRenderer.invoke('ghosttunes:get-listening-history', params),
   getListeningStats: () => ipcRenderer.invoke('ghosttunes:get-listening-stats'),
+  getTopTracks: (limit) => ipcRenderer.invoke('ghosttunes:get-top-tracks', limit),
   clearListeningHistory: (options) => ipcRenderer.invoke('ghosttunes:clear-listening-history', options),
   exportListeningData: () => ipcRenderer.invoke('ghosttunes:export-listening-data'),
 

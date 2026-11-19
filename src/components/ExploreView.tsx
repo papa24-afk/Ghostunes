@@ -34,6 +34,15 @@ import { Artwork } from './Artwork';
 import { MixesRow } from './MixesRow';
 import { ArtistAvatar } from './ArtistAvatar';
 import { upgradeToHighResArtwork } from '../utils/artwork';
+import { getAllDownloadedTracks, getTopTracks, importLocalFiles } from '../services/desktopService';
+import { getApiUrl } from '../utils/api';
+
+/** Library lists made automatically: your most played, songs kept on this PC, your own files. */
+const SMART_LISTS: Record<string, { name: string; description: string }> = {
+  'smart:top': { name: 'My top 100', description: 'Your most played songs, counted from every listen' },
+  'smart:cached': { name: 'Cached', description: 'Songs you’ve played are kept on this PC, so they start instantly and play offline (your last 80)' },
+  'smart:uploaded': { name: 'Uploaded', description: 'Music files from your computer' },
+};
 
 export const GENRE_CHIPS = [
   'Trending',
@@ -220,10 +229,38 @@ export const ExploreView: React.FC<Props> = ({
   }, [openMenuTrackId, openMenuPlaylistId]);
 
   // Selected playlist object
+  const isSmartList = Boolean(selectedPlaylistId?.startsWith('smart:'));
+  const [smartTracks, setSmartTracks] = useState<Record<string, Track[]>>({});
+  const [smartLoading, setSmartLoading] = useState(false);
+  const loadSmartList = async (id: string) => {
+    setSmartLoading(true);
+    try {
+      let tracks: Track[] = [];
+      if (id === 'smart:top') tracks = await getTopTracks(100);
+      else if (id === 'smart:cached') {
+        const res = await fetch(getApiUrl('/api/cache'));
+        tracks = (await res.json()).tracks || [];
+      } else if (id === 'smart:uploaded') {
+        const all = await getAllDownloadedTracks();
+        tracks = all.filter(t => t.id.startsWith('local_') || (t as any).source === 'local_import');
+      }
+      setSmartTracks(m => ({ ...m, [id]: tracks }));
+    } catch {
+      setSmartTracks(m => ({ ...m, [id]: [] }));
+    } finally {
+      setSmartLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (selectedPlaylistId && SMART_LISTS[selectedPlaylistId]) loadSmartList(selectedPlaylistId);
+  }, [selectedPlaylistId]);
+
   const selectedPlaylist = useMemo(() => {
     if (!selectedPlaylistId) return null;
+    const smart = SMART_LISTS[selectedPlaylistId];
+    if (smart) return { id: selectedPlaylistId, name: smart.name, description: smart.description, tracks: smartTracks[selectedPlaylistId] || [], createdAt: 0 } as Playlist;
     return playlists.find(p => p.id === selectedPlaylistId) || null;
-  }, [selectedPlaylistId, playlists]);
+  }, [selectedPlaylistId, playlists, smartTracks]);
 
   // Determine active raw track collection based on tab and search
   const rawTracks = useMemo(() => {
@@ -412,7 +449,7 @@ export const ExploreView: React.FC<Props> = ({
                 <h1 className="font-serif text-2xl sm:text-4xl font-bold text-white tracking-tight truncate">
                   {selectedPlaylist.name}
                 </h1>
-                {onRenamePlaylist && (
+                {onRenamePlaylist && !isSmartList && (
                   <button
                     onClick={() => {
                       setRenameText(selectedPlaylist.name);
@@ -492,7 +529,18 @@ export const ExploreView: React.FC<Props> = ({
                 </button>
               )}
 
-              {onOpenPlaylistRescue && (
+              {selectedPlaylistId === 'smart:uploaded' && (
+                <button
+                  onClick={async () => { const r = await importLocalFiles(); if (r.imported > 0) loadSmartList('smart:uploaded'); }}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  title="Add music files from your computer"
+                >
+                  <CloudUpload className="w-3.5 h-3.5" />
+                  <span>Add files</span>
+                </button>
+              )}
+
+              {onOpenPlaylistRescue && !isSmartList && (
                 <button
                   onClick={() => onOpenPlaylistRescue(selectedPlaylist)}
                   className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#9e2a40]/15 hover:bg-[#9e2a40]/25 border border-[#9e2a40]/30 text-[#e0536c] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
@@ -503,7 +551,7 @@ export const ExploreView: React.FC<Props> = ({
                 </button>
               )}
 
-              {onDeletePlaylist && (
+              {onDeletePlaylist && !isSmartList && (
                 <button
                   onClick={() => setPlaylistToDelete(selectedPlaylist)}
                   className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-white/5 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 border border-white/10 transition-colors cursor-pointer ml-auto text-xs font-semibold"
@@ -665,7 +713,7 @@ export const ExploreView: React.FC<Props> = ({
                       {t.duration || '3:30'}
                     </span>
 
-                    {onRemoveTrackFromPlaylist && (
+                    {onRemoveTrackFromPlaylist && !isSmartList && (
                       <button
                         onClick={() => onRemoveTrackFromPlaylist(selectedPlaylist.id, t.id)}
                         className="p-1 text-zinc-500 hover:text-rose-400 rounded-lg hover:bg-white/5 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
@@ -878,11 +926,7 @@ export const ExploreView: React.FC<Props> = ({
 
             {/* 3. My top 100 */}
             <div
-              onClick={() => {
-                const topPool = history.length > 0 ? history.map(h => h.track) : favorites;
-                if (topPool.length > 0) onPlayTrack(topPool[0], topPool);
-                else if (onNavigateView) onNavigateView('memory');
-              }}
+              onClick={() => setSelectedPlaylistId('smart:top')}
               className="flex items-center justify-between p-2 rounded-2xl hover:bg-white/[0.04] transition-colors cursor-pointer group select-none"
             >
               <div className="flex items-center gap-3.5 min-w-0">
@@ -913,9 +957,7 @@ export const ExploreView: React.FC<Props> = ({
 
             {/* 4. Cached */}
             <div
-              onClick={() => {
-                if (genreTracks.length > 0) onPlayTrack(genreTracks[0], genreTracks);
-              }}
+              onClick={() => setSelectedPlaylistId('smart:cached')}
               className="flex items-center justify-between p-2 rounded-2xl hover:bg-white/[0.04] transition-colors cursor-pointer group select-none"
             >
               <div className="flex items-center gap-3.5 min-w-0">
@@ -941,9 +983,7 @@ export const ExploreView: React.FC<Props> = ({
 
             {/* 5. Uploaded */}
             <div
-              onClick={() => {
-                if (onCreateNewPlaylist) onCreateNewPlaylist();
-              }}
+              onClick={() => setSelectedPlaylistId('smart:uploaded')}
               className="flex items-center justify-between p-2 rounded-2xl hover:bg-white/[0.04] transition-colors cursor-pointer group select-none"
             >
               <div className="flex items-center gap-3.5 min-w-0">

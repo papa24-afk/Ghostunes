@@ -236,6 +236,7 @@ declare global {
       recordPlay: (entry: Partial<ListeningHistoryRecord>) => Promise<string>;
       getListeningHistory: (params?: { limit?: number; offset?: number }) => Promise<ListeningHistoryRecord[]>;
       getListeningStats: () => Promise<ListeningStats>;
+      getTopTracks?: (limit?: number) => Promise<Array<{ id: string; title: string; artist: string; album?: string; duration_seconds?: number; plays: number; thumbnail?: string }>>;
       clearListeningHistory: (options?: { all?: boolean; trackId?: string; id?: string; beforeTimestamp?: number }) => Promise<any>;
       exportListeningData: () => Promise<any>;
       importLocalFiles: () => Promise<{ imported: number; tracks: Track[] }>;

@@ -3,6 +3,7 @@ import { extractBestThumbnail } from './serverArtwork.js';
 import { registerHandoffRoutes } from './serverHandoff.js';
 import { registerProximityRoutes, startProximityWatcher } from './serverProximity.js';
 import { registerDeviceRoutes } from './serverDevices.js';
+import { registerCacheRoutes, cacheDir } from './serverCache.js';
 import { startBluetoothLink } from './serverBluetooth.js';
 import { registerMobileRoutes, fillMissingDurations, startDiscoveryResponder } from './serverMobile.js';
 import cors from 'cors';
@@ -700,7 +701,8 @@ app.get('/api/stream/:id', async (req, res) => {
   // If local offline download exists on disk, stream it immediately with native 206 byte-ranges
   const possibleLocalMediaDirs = [
     path.join(process.env.APPDATA || '', 'metrolist-web', 'media'),
-    path.join(process.env.APPDATA || '', 'Ghosttunes', 'media')
+    path.join(process.env.APPDATA || '', 'Ghosttunes', 'media'),
+    cacheDir() // songs kept after playing ("Cached"): instant and offline
   ];
   const possibleFileNames = [
     `${videoId}.mp3`,
@@ -2112,6 +2114,7 @@ app.get('/api/rooms/:roomId/sync', (req, res) => {
 // Tap / flick to transfer between phone and desktop (must be before the static catch-all)
 registerProximityRoutes(app); // before /api/handoff/:id
 registerDeviceRoutes(app, { warmTrack });
+registerCacheRoutes(app, { getYtdlTrackInfo, ytdlClient });
 registerHandoffRoutes(app);
 // Ghosttunes Mobile additions: stream prepare, typed search, playlist details
 registerMobileRoutes(app, { getInnertube, getYtdlTrackInfo, chooseFormat, ytdlClient });

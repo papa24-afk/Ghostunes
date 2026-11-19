@@ -510,6 +510,44 @@ export const getListeningHistory = async (limit = 100, offset = 0): Promise<List
   }
 };
 
+/** Most played songs (all listens counted), newest wins ties. Works in the desktop app and the browser. */
+export const getTopTracks = async (limit = 100): Promise<Track[]> => {
+  const toTrack = (r: { id: string; title?: string; artist?: string; album?: string; duration_seconds?: number; thumbnail?: string; plays?: number }): Track => {
+    const secs = Math.round(Number(r.duration_seconds) || 0);
+    return {
+      id: r.id,
+      title: r.title || 'Unknown title',
+      artist: r.artist || 'Unknown Artist',
+      album: r.album || '',
+      duration: secs ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : '',
+      durationSeconds: secs,
+      thumbnail: r.thumbnail || (/^[\w-]{11}$/.test(r.id) ? `https://i.ytimg.com/vi/${r.id}/hqdefault.jpg` : ''),
+    } as Track;
+  };
+  if (isDesktopApp() && window.electronAPI?.getTopTracks) {
+    try {
+      return (await window.electronAPI.getTopTracks(limit)).map(toTrack);
+    } catch (e) {
+      console.warn('[DesktopService] getTopTracks error:', e);
+    }
+  }
+  try {
+    const raw = localStorage.getItem('ghost_listening_history');
+    const history: ListeningHistoryRecord[] = raw ? JSON.parse(raw) : [];
+    const map = new Map<string, { id: string; title?: string; artist?: string; album?: string; duration_seconds?: number; plays: number; last: number }>();
+    for (const h of history) {
+      if (!h.track_id) continue;
+      const cur = map.get(h.track_id) || { id: h.track_id, title: h.title, artist: h.artist, album: h.album, duration_seconds: h.duration, plays: 0, last: 0 };
+      cur.plays++;
+      cur.last = Math.max(cur.last, h.played_at || 0);
+      map.set(h.track_id, cur);
+    }
+    return [...map.values()].sort((a, b) => b.plays - a.plays || b.last - a.last).slice(0, limit).map(toTrack);
+  } catch {
+    return [];
+  }
+};
+
 export const getListeningStats = async (): Promise<ListeningStats> => {
   if (isDesktopApp() && window.electronAPI?.getListeningStats) {
     try {

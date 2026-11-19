@@ -841,6 +841,8 @@ export function App() {
   const autoplayRef = useRef(autoplay);
   autoplayRef.current = autoplay;
   const currentTrackRef = useRef<Track | null>(null);
+  /** Songs already sent to the PC's cache this session. */
+  const cachedRequestedRef = useRef<Set<string>>(new Set());
   currentTrackRef.current = currentTrack;
 
   // Tap / flick to transfer: refs so the long-lived listeners never use stale closures.
@@ -3012,6 +3014,17 @@ export function App() {
             setCurrentTime(t);
             const dur = e.currentTarget.duration || duration;
             musicMemory.onTimeUpdate(t, dur);
+
+            // "Cached": after 30 s of listening, keep this song on the PC (instant + offline next time).
+            const ct = currentTrackRef.current;
+            if (t > 30 && ct?.id && isDesktopApp() && !cachedRequestedRef.current.has(ct.id) && !ct.id.startsWith('local_') && !downloadedTrackIds.has(ct.id)) {
+              cachedRequestedRef.current.add(ct.id);
+              fetch(getApiUrl(`/api/cache/${encodeURIComponent(ct.id)}`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ track: { title: ct.title, artist: ct.artist, album: ct.album, duration: ct.duration, durationSeconds: ct.durationSeconds, thumbnail: ct.thumbnail } }),
+              }).catch(() => {});
+            }
 
             // Spotify-Style Smart Radio: Pre-buffer next track at 15s left & seamlessly append to queue
             if (isSmartRadioEnabled && dur > 15 && (dur - t) <= 15 && (dur - t) > 0 && currentTrack?.id) {

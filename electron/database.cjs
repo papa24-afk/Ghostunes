@@ -501,6 +501,21 @@ class GhosttunesDatabase {
     `).all(limit, offset);
   }
 
+  /** Your most played songs (counts every listen), for "My top 100". */
+  getTopTracks(limit = 100) {
+    return this.db.prepare(`
+      SELECT lh.track_id AS id, MAX(lh.title) AS title, MAX(lh.artist) AS artist, MAX(lh.album) AS album,
+             MAX(lh.duration) AS duration_seconds, COUNT(*) AS plays, MAX(lh.played_at) AS last_played,
+             COALESCE(MAX(t.thumbnail), '') AS thumbnail
+      FROM listening_history lh
+      LEFT JOIN tracks t ON t.id = lh.track_id
+      WHERE lh.track_id IS NOT NULL AND lh.track_id != ''
+      GROUP BY lh.track_id
+      ORDER BY plays DESC, last_played DESC
+      LIMIT ?
+    `).all(Math.max(1, Math.min(500, Number(limit) || 100)));
+  }
+
   getListeningStats() {
     const todayStart = new Date().setHours(0, 0, 0, 0);
     const counts = this.db.prepare(`

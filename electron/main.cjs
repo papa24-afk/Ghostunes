@@ -663,6 +663,10 @@ function setupIpcHandlers() {
     return database.getListeningHistory(limit || 100, offset || 0);
   });
 
+  ipcMain.handle('ghosttunes:get-top-tracks', async (_event, limit) => {
+    return database.getTopTracks(limit);
+  });
+
   ipcMain.handle('ghosttunes:get-listening-stats', async () => {
     return database.getListeningStats();
   });
