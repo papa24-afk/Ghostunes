@@ -14,10 +14,10 @@
 
 Get the latest production release ready to run on Windows 10 & 11:
 
-[**⬇️ Download Ghosttunes-Setup-1.0.0.exe (137 MB)**](https://github.com/papa24-afk/Ghostunes/releases/download/v1.0.0/Ghosttunes-Setup-1.0.0.exe)
+[**⬇️ Download Ghosttunes-Setup-2.0.0.exe (145 MB)**](https://github.com/papa24-afk/Ghostunes/releases/download/v2.0.0/Ghosttunes-Setup-2.0.0.exe)
 
-* **Current Version:** `1.0.0`
-* **Official Release Notes:** [Ghosttunes v1.0.0 on GitHub Releases](https://github.com/papa24-afk/Ghostunes/releases/tag/v1.0.0)
+* **Current Version:** `2.0.0`
+* **Official Release Notes:** [Ghosttunes v2.0.0 on GitHub Releases](https://github.com/papa24-afk/Ghostunes/releases/tag/v2.0.0)
 * **SHA-256 Checksum:** `E7773F3C8BB513EDC2CDEF5C8382AA9008A0194846F7FCF55810EE98EAD3481E`
 
 ---
