@@ -5,6 +5,7 @@ import { SavedSession } from '../utils/session';
 import { getOptimizedArtwork } from '../utils/artwork';
 import { TrackCollection } from './TrackCollection';
 import { Artwork } from './Artwork';
+import { MixesRow } from './MixesRow';
 
 interface Props {
   track: Track | null;
@@ -145,6 +146,7 @@ export function HomeView(props: Props) {
           )}
         </div>
       </section>
+      <MixesRow kind="personal" history={history} favorites={favorites} isDataSaver={isDataSaver} onPlay={(list) => props.onPlayTrack(list[0], list)} />
       {recentTracks.length > 0 && (
         <section>
           <h2 className="font-serif text-xl mb-4">Recently played</h2>
@@ -161,6 +163,7 @@ export function HomeView(props: Props) {
           />
         </section>
       )}
+      <MixesRow kind="moods" history={history} favorites={favorites} isDataSaver={isDataSaver} onPlay={(list) => props.onPlayTrack(list[0], list)} />
       {favorites.length > 0 && (
         <section>
           <h2 className="font-serif text-xl mb-4">Your favourites</h2>

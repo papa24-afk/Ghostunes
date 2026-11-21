@@ -626,6 +626,14 @@ export function computeVectorSimilarity(vecA, vecB) {
 // =========================================================================
 // 7. Main Smart Radio Pipeline (YouTube Music Mix + Avatars + Tab Filtering)
 // =========================================================================
+/** One key for every version of a song: drops brackets, "Artist - ", and extras like "official video", "live", "slowed". */
+export function songKey(title = '') {
+  let t = String(title).toLowerCase().replace(/[(\[{].*?[)\]}]/g, ' ');
+  t = t.replace(/\b(official|music video|video|audio|lyrics?|visuali[sz]er|hd|hq|4k|live|slowed|reverb|sped up|nightcore|remix|cover|version|feat|ft)\b.*/u, ' ');
+  if (t.includes(' - ')) t = t.split(' - ').slice(1).join(' - ').trim() || t.split(' - ')[0];
+  return t.replace(/[^\p{L}\p{N}]+/gu, '') || String(title).toLowerCase();
+}
+
 export async function get_smart_radio(video_id, getInnertubeFn, options = {}) {
   if (!video_id) {
     throw new Error('Video ID is required for smart radio');
@@ -716,12 +724,16 @@ export async function get_smart_radio(video_id, getInnertubeFn, options = {}) {
       artist_thumbnail: ''
     }));
 
-  // De-duplicate candidate list
+  // De-duplicate candidate list: same video, or another version of the same song
+  // ("Blinding Lights (Lyrics)", "… - Live", "slowed") including the seed itself.
   const seenIds = new Set([video_id]);
+  const seenSongs = new Set([songKey(seedTrack.title)]);
   const uniqueCandidates = [];
   for (const cand of allCandidates) {
-    if (!seenIds.has(cand.id)) {
+    const key = songKey(cand.title);
+    if (!seenIds.has(cand.id) && !seenSongs.has(key)) {
       seenIds.add(cand.id);
+      seenSongs.add(key);
       uniqueCandidates.push(cand);
     }
   }

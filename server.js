@@ -1,5 +1,11 @@
 import express from 'express';
 import { extractBestThumbnail } from './serverArtwork.js';
+import { registerHandoffRoutes } from './serverHandoff.js';
+import { registerProximityRoutes, startProximityWatcher } from './serverProximity.js';
+import { registerDeviceRoutes } from './serverDevices.js';
+import { registerCacheRoutes, cacheDir } from './serverCache.js';
+import { startBluetoothLink } from './serverBluetooth.js';
+import { registerMobileRoutes, fillMissingDurations, startDiscoveryResponder } from './serverMobile.js';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
@@ -97,7 +103,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 // Health check endpoint for desktop app and service monitoring
 app.get('/api/health', (req, res) => {
@@ -492,7 +498,8 @@ app.get('/api/artist', async (req, res) => {
               album: item.album?.name || '',
               duration: item.duration?.text || '3:30',
               durationSeconds: item.duration?.seconds || 210,
-              thumbnail: songThumb
+              thumbnail: songThumb,
+              missingDuration: !item.duration?.seconds
             });
           }
         }
@@ -543,6 +550,7 @@ app.get('/api/artist', async (req, res) => {
         }
       }
 
+      await fillMissingDurations(innertube, topTracks.slice(0, 20));
       const responsePayload = {
         id: artistId || `artist_${Date.now()}`,
         name: artistName,
@@ -659,29 +667,50 @@ app.get('/api/album', async (req, res) => {
 // In-memory stream info cache to minimize metadata roundtrips for range requests
 const ytdlInfoCache = new Map();
 
+const ytdlInfoInflight = new Map();
 async function getYtdlTrackInfo(videoId) {
   const cached = ytdlInfoCache.get(videoId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.info;
   }
-  let info;
-  try {
-    info = await ytdlClient.getInfo(videoId);
-  } catch (primaryErr) {
-    console.warn(`[Stream API] Primary YTDL info failed for ${videoId}: ${primaryErr.message}. Trying mobile web fallback...`);
-    try {
-      const fallbackClient = new Ytdl({ clients: ['mweb', 'web_embedded'] });
-      info = await fallbackClient.getInfo(videoId);
-    } catch (fallbackErr) {
-      console.warn(`[Stream API] Fallback client failed for ${videoId}: ${fallbackErr.message}`);
-      throw primaryErr;
-    }
+async function getYtdlTrackInfo(videoId) {
+  const cached = ytdlInfoCache.get(videoId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.info;
   }
-  ytdlInfoCache.set(videoId, {
-    info,
-    expiresAt: Date.now() + 2 * 3600 * 1000 // 2 hours
-  });
-  return info;
+  // Share one lookup between callers (a warm-up and the real play request can overlap).
+  if (ytdlInfoInflight.has(videoId)) return ytdlInfoInflight.get(videoId);
+
+  const pending = (async () => {
+    let info;
+    try {
+      info = await ytdlClient.getInfo(videoId);
+    } catch (primaryErr) {
+      console.warn(`[Stream API] Primary YTDL info failed for ${videoId}: ${primaryErr.message}. Trying mobile web fallback...`);
+      try {
+        const fallbackClient = new Ytdl({ clients: ['mweb', 'web_embedded'] });
+        info = await fallbackClient.getInfo(videoId);
+      } catch (fallbackErr) {
+        console.warn(`[Stream API] Fallback client failed for ${videoId}: ${fallbackErr.message}`);
+        throw primaryErr;
+      }
+    }
+    ytdlInfoCache.set(videoId, {
+      info,
+      expiresAt: Date.now() + 2 * 3600 * 1000 // 2 hours
+    });
+    return info;
+  })().finally(() => ytdlInfoInflight.delete(videoId));
+
+  ytdlInfoInflight.set(videoId, pending);
+  return pending;
+}
+
+/** Look a song up ahead of time so playing it later starts in well under a second. */
+function warmTrack(videoId) {
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(String(videoId || ''))) return;
+  getYtdlTrackInfo(videoId).catch(() => {});
+}
 }
 
 // 3. Audio Streaming Proxy with HTTP 206 Range Support powered by @distube/ytdl-core
@@ -689,13 +718,15 @@ app.get('/api/stream/:id', async (req, res) => {
   const videoId = req.params.id;
   const trackTitle = req.query.title ? String(req.query.title) : '';
   const trackArtist = req.query.artist ? String(req.query.artist) : '';
-  const videoId = req.params.id;
+  // Optional ?quality=low for mobile data saving; default stays highest.
+  const audioQuality = req.query.quality === 'low' ? 'lowestaudio' : 'highestaudio';
   const sanitizedId = String(videoId || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
 
   // If local offline download exists on disk, stream it immediately with native 206 byte-ranges
   const possibleLocalMediaDirs = [
     path.join(process.env.APPDATA || '', 'metrolist-web', 'media'),
-    path.join(process.env.APPDATA || '', 'Ghosttunes', 'media')
+    path.join(process.env.APPDATA || '', 'Ghosttunes', 'media'),
+    cacheDir() // songs kept after playing ("Cached"): instant and offline
   ];
   const possibleFileNames = [
     `${videoId}.mp3`,
@@ -750,12 +781,12 @@ app.get('/api/stream/:id', async (req, res) => {
     // Prefer MP4 container (AAC) for standard HTML5 byte-range seekability across Chromium and Electron
     let format = chooseFormat(info.formats, { 
       filter: (f) => f.hasAudio && !f.hasVideo && f.container === 'mp4', 
-      quality: 'highestaudio' 
+      quality: audioQuality 
     });
     if (!format) {
       format = chooseFormat(info.formats, { 
         filter: { hasAudio: true, hasVideo: false }, 
-        quality: 'highestaudio' 
+        quality: audioQuality 
       });
     }
     if (!format) {
@@ -786,9 +817,9 @@ app.get('/api/stream/:id', async (req, res) => {
         res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLength}`);
         res.setHeader('Content-Length', chunkSize);
 
-        stream = await ytdlClient.download(info, {
+                stream = await ytdlClient.download(info, {
           format,
-          quality: 'highestaudio',
+          quality: audioQuality,
           range: { start, end }
         });
       }
@@ -799,9 +830,9 @@ app.get('/api/stream/:id', async (req, res) => {
         res.setHeader('Content-Length', totalLength);
       }
       res.status(200);
-      stream = await ytdlClient.download(info, {
+            stream = await ytdlClient.download(info, {
         format,
-        quality: 'highestaudio'
+        quality: audioQuality
       });
     }
 
@@ -882,9 +913,10 @@ app.get('/api/artwork/:id', (req, res) => {
 // Dedicated audio download endpoint for full track downloads (Desktop app & browser downloads)
 app.get('/api/download/:id', async (req, res) => {
   const videoId = req.params.id;
+  const audioQuality = req.query.quality === 'low' ? 'lowestaudio' : 'highestaudio';
   try {
     const info = await getYtdlTrackInfo(videoId);
-    const format = chooseFormat(info.formats, { filter: { hasAudio: true, hasVideo: false }, quality: 'highestaudio' });
+    const format = chooseFormat(info.formats, { filter: { hasAudio: true, hasVideo: false }, quality: audioQuality });
     const totalLength = format ? (parseInt(format.contentLength, 10) || 0) : 0;
     const mimeType = (format && format.mimeType) ? format.mimeType : 'audio/mp4';
 
@@ -910,7 +942,7 @@ app.get('/api/download/:id', async (req, res) => {
 
         audioStream = await ytdlClient.download(info, {
           filter: { hasAudio: true, hasVideo: false },
-          quality: 'highestaudio',
+          quality: audioQuality,
           range: { start, end }
         });
       }
@@ -923,7 +955,7 @@ app.get('/api/download/:id', async (req, res) => {
       res.status(200);
       audioStream = await ytdlClient.download(info, {
         filter: { hasAudio: true, hasVideo: false },
-        quality: 'highestaudio'
+        quality: audioQuality
       });
     }
 
@@ -2131,6 +2163,14 @@ app.get('/api/rooms/:roomId/sync', (req, res) => {
   });
 });
 
+// Tap / flick to transfer between phone and desktop (must be before the static catch-all)
+registerProximityRoutes(app); // before /api/handoff/:id
+registerDeviceRoutes(app, { warmTrack });
+registerCacheRoutes(app, { getYtdlTrackInfo, ytdlClient });
+registerHandoffRoutes(app);
+// Ghosttunes Mobile additions: stream prepare, typed search, playlist details
+registerMobileRoutes(app, { getInnertube, getYtdlTrackInfo, chooseFormat, ytdlClient });
+
 // Serve static client bundle in production desktop app
 const clientDist = path.join(__dirname, 'dist');
 if (fs.existsSync(clientDist)) {
@@ -2145,4 +2185,7 @@ if (fs.existsSync(clientDist)) {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Ghosttunes API listening on http://127.0.0.1:${PORT}`);
+  startDiscoveryResponder(PORT);
+  startProximityWatcher();
+  startBluetoothLink(PORT);
 });

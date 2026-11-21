@@ -21,7 +21,7 @@ run(process.execPath, [path.join(root, 'node_modules/@capacitor/cli/bin/capacito
 const tasks = verify ? ['assembleDebug', 'testDebugUnitTest', 'lintDebug'] : ['assembleDebug'];
 const android = path.join(root, 'android');
 if (process.platform === 'win32')
-  run('cmd.exe', ['/d', '/s', '/c', 'gradlew.bat', ...tasks, '--no-daemon'], android);
+  run('cmd.exe', ['/d', '/s', '/c', '.\\gradlew.bat', ...tasks, '--no-daemon'], android);
 else run('sh', ['./gradlew', ...tasks, '--no-daemon'], android);
 console.log('Development APK: android/app/build/outputs/apk/debug/app-debug.apk');
 console.log('A debug APK still needs a reachable backend and device testing before distribution.');

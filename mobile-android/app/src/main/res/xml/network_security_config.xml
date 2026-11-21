@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The PC address is entered at runtime and can be any LAN IP, which this file cannot express.
+     Cleartext is allowed here, and PrivateNetworkGuard (an OkHttp interceptor) rejects every http://
+     request whose host is not a private, link-local or loopback address. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

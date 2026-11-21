@@ -4,6 +4,10 @@ import { Track, LyricLine, Playlist, HistoryItem, AutoplayMode } from './types';
 import { parseLrc, parseLyricsPayload, LyricFormat } from './utils/lyricsParser';
 import { DesktopPlayerView } from './components/DesktopPlayerView';
 import { MobilePlayerView } from './components/MobilePlayerView';
+import { HandoffArrival, HandoffAnimation } from './components/HandoffArrival';
+import { DevicesPanel } from './components/DevicesPanel';
+import { CommandPalette, PaletteAction } from './components/CommandPalette';
+import { usePhoneRemote } from './services/phoneRemote';
 import { CinematicLyricsView } from './components/CinematicLyricsView';
 import { PlaylistModal } from './components/PlaylistModal';
 import { CreatePlaylistModal } from './components/CreatePlaylistModal';
@@ -19,6 +23,19 @@ import { AboutModal } from './components/AboutModal';
 import { audioLab } from './services/audioLabEngine';
 import { musicMemory } from './services/musicMemoryService';
 import { listeningRooms } from './services/listeningRoomsService';
+import {
+  HandoffError,
+  buildHandoffSnapshot,
+  fadeOutAndPause,
+  getDesktopNowPlaying,
+  onHandoffTrigger,
+  pushToDesktop,
+  releaseDesktop,
+  reportHandoffStatus,
+  requestHandoff,
+  startDesktopHandoffListener
+} from './services/handoffService';
+import { isFlickHandoffEnabled, startFlickGesture, subscribeFlickSetting } from './services/gestureService';
 import { getNextRadioTrack } from './services/ghostDjEngine';
 import { generateAutoplayBatch } from './services/smartAutoplayService';
 import { fetchSmartRadio, logSmartRadioFeedback, prebufferTrackStream } from './services/smartRadioService';
@@ -825,7 +842,30 @@ export function App() {
   const autoplayRef = useRef(autoplay);
   autoplayRef.current = autoplay;
   const currentTrackRef = useRef<Track | null>(null);
+  /** Songs already sent to the PC's cache this session. */
+  const cachedRequestedRef = useRef<Set<string>>(new Set());
   currentTrackRef.current = currentTrack;
+
+  // Tap / flick to transfer: refs so the long-lived listeners never use stale closures.
+  const playTrackRef = useRef<(track: Track, newQueue?: Track[], startAt?: number, exactIndex?: number) => Promise<void>>(async () => {});
+  const handoffStateRef = useRef({ currentTrack, queue, queueIndex, currentTime });
+  handoffStateRef.current = { currentTrack, queue, queueIndex, currentTime };
+  /** Where to land once metadata loads: `position` was valid at local time `anchor` (ms). */
+  const handoffSeekRef = useRef<{ trackId: string; position: number; anchor: number } | null>(null);
+  /** Desktop: incoming handoff waiting for the audio 'playing' event. */
+  const incomingHandoffRef = useRef<{ id: string; trackId: string; deviceName: string; timer: any } | null>(null);
+  /** Phone: pull waiting for local playback to start before releasing the PC. */
+  const pullHandoffRef = useRef<{ trackId: string; timer: any } | null>(null);
+  const handoffBusyRef = useRef(false);
+  const [handoffToast, setHandoffToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const [handoffAnimation, setHandoffAnimation] = useState<HandoffAnimation | null>(null);
+  const lastPhoneNameRef = useRef('your phone');
+  const handoffToastTimerRef = useRef<any>(null);
+  const showHandoffToast = (message: string, tone: 'info' | 'success' | 'error' = 'info', ms = 3200) => {
+    if (handoffToastTimerRef.current) clearTimeout(handoffToastTimerRef.current);
+    setHandoffToast({ message, tone });
+    handoffToastTimerRef.current = setTimeout(() => setHandoffToast(null), ms);
+  };
 
   // Sync offline downloads in Desktop mode
   const refreshDownloadedTracks = async () => {
@@ -1460,7 +1500,7 @@ export function App() {
     if (autoplayRef.current && nextQueue.length <= 1) {
       (async () => {
         try {
-          const radioRes = await fetch(getApiUrl(`/api/smart-radio?id=${encodeURIComponent(track.id)}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&mode=similar`));
+          const radioRes = await fetch(getApiUrl(`/api/smart-radio?id=${encodeURIComponent(track.id)}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&mode=balanced`)); // the artist's songs alternating with similar artists
           if (radioRes.ok) {
             const radioData = await radioRes.json();
             const radioTracks: Track[] = (radioData.tracks || []).map((t: any) => ({
@@ -1605,9 +1645,12 @@ export function App() {
       fetchLyrics(track);
     }
   };
+  playTrackRef.current = playTrack;
 
   // Play/pause toggle
   const togglePlayPause = () => {
+    // Music is on a phone: the PC's play button controls it.
+    if (phoneRemoteRef.current.remote) { phoneRemoteRef.current.toggle(); return; }
     const audio = audioRef.current;
     if (!audio) return;
     if (!audio.src && currentTrack) {
@@ -2063,6 +2106,263 @@ export function App() {
     };
   }, [isStandaloneMiniWidget, lyrics, volume, isMuted, favorites, isShuffle, isRepeat]);
 
+  // ---------------------------------------------------------------- Tap / flick to transfer
+  const finishIncomingHandoff = (status: 'playing' | 'failed', error?: string) => {
+    const incoming = incomingHandoffRef.current;
+    if (!incoming) return;
+    clearTimeout(incoming.timer);
+    incomingHandoffRef.current = null;
+    reportHandoffStatus(incoming.id, status, error);
+    if (status === 'playing') lastPhoneNameRef.current = incoming.deviceName;
+    // The arrival animation already started when the song was sent; on failure, take it away.
+    if (status === 'failed') setHandoffAnimation(null);
+  };
+
+  const finishPullHandoff = (ok: boolean) => {
+    const pull = pullHandoffRef.current;
+    if (!pull) return;
+    clearTimeout(pull.timer);
+    pullHandoffRef.current = null;
+    handoffBusyRef.current = false;
+    if (ok) {
+      releaseDesktop('pulled');
+      showHandoffToast('Moved to your phone', 'success');
+    } else {
+      showHandoffToast("Couldn't start playback on your phone.", 'error', 4500);
+    }
+  };
+
+  /** Called from the <audio> 'playing' event. */
+  const onHandoffAudioPlaying = () => {
+    const trackId = currentTrackRef.current?.id;
+    if (incomingHandoffRef.current?.trackId === trackId) finishIncomingHandoff('playing');
+    if (pullHandoffRef.current?.trackId === trackId) finishPullHandoff(true);
+  };
+
+  // A handoff that hits a playback error is reported as failed (the other device keeps playing).
+  useEffect(() => {
+    if (playbackStatus !== 'error') return;
+    if (incomingHandoffRef.current) finishIncomingHandoff('failed', playbackError || 'playback_error');
+    if (pullHandoffRef.current) finishPullHandoff(false);
+  }, [playbackStatus]);
+
+  // Desktop: when the music is on a phone, this PC's player controls that phone (Connect-style).
+  const phoneRemote = usePhoneRemote(isDesktopApp() && !isStandaloneMiniWidget, () => {
+    const audio = audioRef.current;
+    return Boolean(audio && audio.src && !audio.paused);
+  });
+  const phoneRemoteRef = useRef(phoneRemote);
+  phoneRemoteRef.current = phoneRemote;
+  const remoteTrack = phoneRemote.remote?.nowPlaying.track ?? null;
+  // Lyrics follow whatever the player shows (the phone's song, then back to the PC's).
+  const remoteTrackId = remoteTrack?.id ?? null;
+  const lastLyricsRemoteRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastLyricsRemoteRef.current === remoteTrackId) return;
+    const had = lastLyricsRemoteRef.current;
+    lastLyricsRemoteRef.current = remoteTrackId;
+    if (remoteTrack && remoteTrack.id !== currentTrackRef.current?.id) fetchLyrics(remoteTrack);
+    else if (!remoteTrackId && had && had !== currentTrackRef.current?.id && currentTrackRef.current) fetchLyrics(currentTrackRef.current);
+  }, [remoteTrackId]);
+
+  // Sleep timer: fade out and stop at a set time, or when the current song ends.
+  const [sleepTimer, setSleepTimer] = useState<{ endsAt: number | null; endOfSong: boolean }>({ endsAt: null, endOfSong: false });
+  const sleepEndOfSongRef = useRef(false);
+  sleepEndOfSongRef.current = sleepTimer.endOfSong;
+  const setSleep = (choice: number | 'end' | null) => {
+    if (choice === null) setSleepTimer({ endsAt: null, endOfSong: false });
+    else if (choice === 'end') setSleepTimer({ endsAt: null, endOfSong: true });
+    else setSleepTimer({ endsAt: Date.now() + choice * 60_000, endOfSong: false });
+    showHandoffToast(choice === null ? 'Sleep timer off' : choice === 'end' ? 'Stopping at the end of this song' : `Stopping in ${choice} minutes`, 'info', 2200);
+  };
+  useEffect(() => {
+    if (!sleepTimer.endsAt) return;
+    const FADE_MS = 6000;
+    const timer = window.setTimeout(async () => {
+      const audio = audioRef.current;
+      if (audio && !audio.paused) {
+        await fadeOutAndPause(audio, FADE_MS);
+        setIsPlaying(false);
+      }
+      setSleepTimer({ endsAt: null, endOfSong: false });
+    }, Math.max(0, sleepTimer.endsAt - Date.now() - FADE_MS));
+    return () => window.clearTimeout(timer);
+  }, [sleepTimer.endsAt]);
+
+  // Ctrl+K quick search: play any song, open a playlist, or run an action, from anywhere.
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  useEffect(() => {
+    if (isStandaloneMiniWidget) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setIsPaletteOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isStandaloneMiniWidget]);
+  const paletteActions: PaletteAction[] = [
+    { id: 'toggle', label: isPlaying ? 'Pause' : 'Play', hint: 'Space', keywords: 'play pause resume stop', run: () => togglePlayPause() },
+    { id: 'next', label: 'Next song', hint: 'Shift + →', keywords: 'skip forward', run: () => (phoneRemote.remote ? phoneRemote.next() : handleNext()) },
+    { id: 'prev', label: 'Previous song', hint: 'Shift + ←', keywords: 'back', run: () => (phoneRemote.remote ? phoneRemote.previous() : handlePrev()) },
+    { id: 'lyrics', label: 'Show lyrics', keywords: 'words sing karaoke', run: () => setShowLyrics(true) },
+    { id: 'now', label: 'Go to Now Playing', keywords: 'current song', run: () => { setShowLyrics(false); setCurrentView('now-playing'); } },
+    { id: 'home', label: 'Go to Home', run: () => { setShowLyrics(false); setCurrentView('home'); } },
+    { id: 'explore', label: 'Go to Explore', keywords: 'browse genres search', run: () => { setShowLyrics(false); setCurrentView('explore'); } },
+    { id: 'library', label: 'Go to Library', keywords: 'playlists', run: () => { setShowLyrics(false); setCurrentView('library'); } },
+    { id: 'favorites', label: 'Go to Favourites', keywords: 'liked loved hearts', run: () => { setShowLyrics(false); setCurrentView('favorites'); } },
+    { id: 'downloads', label: 'Go to Downloads', keywords: 'offline', run: () => { setShowLyrics(false); setCurrentView('downloads'); } },
+    { id: 'shuffle', label: isShuffle ? 'Turn shuffle off' : 'Turn shuffle on', keywords: 'random mix', run: () => setIsShuffle(s => !s) },
+    { id: 'sleep30', label: 'Sleep timer: 30 minutes', keywords: 'stop bed night', run: () => setSleep(30) },
+    { id: 'sleepEnd', label: 'Sleep timer: end of this song', keywords: 'stop bed night', run: () => setSleep('end') },
+    ...(sleepTimer.endsAt || sleepTimer.endOfSong ? [{ id: 'sleepOff', label: 'Turn sleep timer off', keywords: 'cancel', run: () => setSleep(null) }] : []),
+  ];
+
+  // Windows taskbar: ⏮ ⏯ ⏭ under the thumbnail (same as the player bar, so they also drive a phone
+  // that has the music), and the song's progress on the taskbar icon.
+  const taskbarActionsRef = useRef({ toggle: () => {}, next: () => {}, previous: () => {} });
+  taskbarActionsRef.current = {
+    toggle: () => togglePlayPause(),
+    next: () => (phoneRemote.remote ? phoneRemote.next() : handleNext()),
+    previous: () => (phoneRemote.remote ? phoneRemote.previous() : handlePrev()),
+  };
+  useEffect(() => {
+    if (isStandaloneMiniWidget) return;
+    return window.electronAPI?.onTaskbarAction?.((action) => taskbarActionsRef.current[action]?.());
+  }, [isStandaloneMiniWidget]);
+  const shownPlaying = phoneRemote.remote ? phoneRemote.remote.nowPlaying.isPlaying : isPlaying;
+  const shownTime = phoneRemote.remote ? phoneRemote.positionNow() : currentTime;
+  const shownDuration = phoneRemote.remote ? phoneRemote.duration : duration;
+  const shownProgress = shownDuration > 0 ? Math.round((shownTime / shownDuration) * 200) / 200 : 0;
+  const hasShownTrack = Boolean(remoteTrack || currentTrack);
+  useEffect(() => {
+    if (isStandaloneMiniWidget) return;
+    window.electronAPI?.setPlaybackState?.({ hasTrack: hasShownTrack, isPlaying: shownPlaying, progress: shownProgress });
+  }, [hasShownTrack, shownPlaying, shownProgress, isStandaloneMiniWidget]);
+
+  // Desktop: receive handoffs from the phone and report what we're playing.
+  useEffect(() => {
+    if (!isDesktopApp() || isStandaloneMiniWidget) return;
+    return startDesktopHandoffListener({
+      getNowPlaying: () => {
+        const state = handoffStateRef.current;
+        const audio = audioRef.current;
+        if (!state.currentTrack) return null;
+        const hasSource = Boolean(audio && audio.src);
+        const playing = Boolean(hasSource && audio && !audio.paused);
+        const position = hasSource && audio ? audio.currentTime : state.currentTime;
+        return buildHandoffSnapshot(state.currentTrack, state.queue, state.queueIndex, position, playing);
+      },
+      onHandoff: ({ id, snapshot, stampedAt }) => {
+        // Animation first, instantly: it covers the app while the song loads underneath.
+        const artwork = new Image();
+        artwork.src = snapshot.track.thumbnail;
+        setShowLyrics(false);
+        setHandoffAnimation({ key: Date.now(), direction: 'in', track: snapshot.track, deviceName: snapshot.deviceName || 'your phone' });
+        if (incomingHandoffRef.current) finishIncomingHandoff('failed', 'superseded');
+        const timer = setTimeout(() => finishIncomingHandoff('failed', 'timeout'), 15000);
+        incomingHandoffRef.current = { id, trackId: snapshot.track.id, deviceName: snapshot.deviceName || 'your phone', timer };
+        // The server runs on this PC, so stampedAt is already on our clock.
+        handoffSeekRef.current = { trackId: snapshot.track.id, position: snapshot.position, anchor: stampedAt };
+        audioLab.resume();
+        // playTrack still checks getLocalTrack for an offline copy on this PC.
+        playTrackRef.current(snapshot.track, snapshot.queue, snapshot.position, snapshot.queueIndex).catch(err => {
+          finishIncomingHandoff('failed', String(err?.message || err));
+        });
+      },
+      onCommand: ({ action, position }) => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        if (action === 'play' && audio.paused) audio.play().catch(() => {});
+        else if (action === 'pause' && !audio.paused) audio.pause();
+        else if (action === 'toggle') { if (audio.paused) audio.play().catch(() => {}); else audio.pause(); }
+        else if (action === 'next') handleNextRef.current();
+        else if (action === 'previous') handlePrevRef.current();
+        else if (action === 'seek' && typeof position === 'number' && Number.isFinite(position)) audio.currentTime = Math.max(0, position);
+      },
+      onRelease: () => {
+        const audio = audioRef.current;
+        const track = currentTrackRef.current;
+        if (audio && !audio.paused && track) {
+          setHandoffAnimation({ key: Date.now(), direction: 'out', track, deviceName: lastPhoneNameRef.current });
+        }
+        if (audio && !audio.paused) fadeOutAndPause(audio);
+      }
+    });
+  }, [isStandaloneMiniWidget]);
+
+  /** Phone: push to the PC if we're playing, otherwise pull from the PC. */
+  const runHandoff = async () => {
+    if (handoffBusyRef.current) return;
+    handoffBusyRef.current = true;
+    let waitingForPull = false;
+    try {
+      const state = handoffStateRef.current;
+      const audio = audioRef.current;
+      if (audio && audio.src && !audio.paused && state.currentTrack) {
+        showHandoffToast('Sending to your PC…', 'info', 20000);
+        const snapshot = buildHandoffSnapshot(state.currentTrack, state.queue, state.queueIndex, audio.currentTime, true);
+        // Resolves once the PC is actually playing; the phone keeps playing until then (no silent gap).
+        await pushToDesktop(snapshot);
+        await fadeOutAndPause(audio);
+        showHandoffToast('Now playing on your PC', 'success');
+        return;
+      }
+
+      const desktop = await getDesktopNowPlaying();
+      if (!desktop.online) {
+        showHandoffToast('Open Ghosttunes on your PC first.', 'error', 4500);
+        return;
+      }
+      const nowPlaying = desktop.nowPlaying;
+      if (!nowPlaying || !nowPlaying.isPlaying) {
+        showHandoffToast('Nothing is playing on your PC.', 'error', 4500);
+        return;
+      }
+      waitingForPull = true;
+      const timer = setTimeout(() => finishPullHandoff(false), 15000);
+      pullHandoffRef.current = { trackId: nowPlaying.track.id, timer };
+      // nowPlaying.position is valid at desktop.receivedAt on this phone's clock.
+      handoffSeekRef.current = { trackId: nowPlaying.track.id, position: nowPlaying.position, anchor: desktop.receivedAt };
+      audioLab.resume();
+      await playTrackRef.current(nowPlaying.track, nowPlaying.queue, nowPlaying.position, nowPlaying.queueIndex);
+    } catch (err) {
+      const code = err instanceof HandoffError ? err.code : 'unreachable';
+      showHandoffToast(
+        code === 'desktop_offline' ? 'Open Ghosttunes on your PC first.'
+          : code === 'timeout' ? "Your PC didn't start playing in time."
+          : code === 'desktop_failed' ? "Your PC couldn't play this song."
+          : "Can't reach your PC. Are you on the same Wi-Fi?",
+        'error',
+        4500
+      );
+      if (pullHandoffRef.current) {
+        clearTimeout(pullHandoffRef.current.timer);
+        pullHandoffRef.current = null;
+      }
+      waitingForPull = false;
+    } finally {
+      // A pull stays busy until the phone is playing (or it times out) — see finishPullHandoff.
+      if (!waitingForPull || !pullHandoffRef.current) handoffBusyRef.current = false;
+    }
+  };
+  const runHandoffRef = useRef(runHandoff);
+  runHandoffRef.current = runHandoff;
+
+  // Phone: NFC sticker, flick and button all arrive as the same debounced trigger.
+  useEffect(() => {
+    if (isDesktopApp() || isStandaloneMiniWidget) return;
+    return onHandoffTrigger(() => runHandoffRef.current());
+  }, [isStandaloneMiniWidget]);
+
+  const [isFlickEnabled, setIsFlickEnabled] = useState(isFlickHandoffEnabled);
+  useEffect(() => subscribeFlickSetting(setIsFlickEnabled), []);
+  useEffect(() => {
+    if (isDesktopApp() || isStandaloneMiniWidget || !isFlickEnabled) return;
+    return startFlickGesture(() => requestHandoff('flick'));
+  }, [isStandaloneMiniWidget, isFlickEnabled]);
+
   // Check if desktop mini widget is already open on launch
   useEffect(() => {
     if (isDesktopApp() && !isStandaloneMiniWidget) {
@@ -2187,6 +2487,7 @@ export function App() {
             onOpenAbout={() => setIsAboutModalOpen(true)}
             onOpenAppearanceModal={() => setIsAppearanceModalOpen(true)}
             onOpenAudioLab={() => setIsAudioLabOpen(true)}
+            onHandoff={isDesktopApp() ? undefined : () => requestHandoff('button')}
             currentView={currentView}
             onViewChange={(view) => setCurrentView(view)}
             searchQuery={searchQuery}
@@ -2218,10 +2519,13 @@ export function App() {
         ) : (
           <DesktopPlayerView
             keyboardShortcutsEnabled={!showLyrics}
-            track={currentTrack}
-            currentTime={currentTime}
-            duration={duration}
-            isPlaying={isPlaying}
+            track={remoteTrack ?? currentTrack}
+            currentTime={phoneRemote.remote ? phoneRemote.positionNow() : currentTime}
+            duration={phoneRemote.remote ? phoneRemote.duration : duration}
+            isPlaying={phoneRemote.remote ? phoneRemote.remote.nowPlaying.isPlaying : isPlaying}
+            sleepTimer={sleepTimer}
+            onSetSleepTimer={setSleep}
+            remoteDevice={phoneRemote.remote ? { name: phoneRemote.remote.name, output: phoneRemote.remote.output, onPlayHere: phoneRemote.playHere } : null}
             lyrics={lyrics}
             plainLyrics={plainLyrics}
             loadingLyrics={loadingLyrics}
@@ -2250,10 +2554,10 @@ export function App() {
             onSelectPreset={handleSelectPreset}
             onUploadWallpaper={handleUploadWallpaper}
             onResetWallpaper={handleResetWallpaper}
-            onSeek={handleSeek}
+            onSeek={(t) => (phoneRemote.remote ? phoneRemote.seek(t) : handleSeek(t))}
             onPlayPause={togglePlayPause}
-            onNext={handleNext}
-            onPrev={handlePrev}
+            onNext={() => (phoneRemote.remote ? phoneRemote.next() : handleNext())}
+            onPrev={() => (phoneRemote.remote ? phoneRemote.previous() : handlePrev())}
             onPlayTrack={(t, q) => playTrack(t, q || queue)}
             onToggleShuffle={() => setIsShuffle(!isShuffle)}
             onToggleRepeat={cycleRepeat}
@@ -2538,6 +2842,58 @@ export function App() {
         onModeChange={(m) => setAutoplayMode(m as any)}
       />
 
+      {!isStandaloneMiniWidget && (
+        <CommandPalette
+          open={isPaletteOpen}
+          onClose={() => setIsPaletteOpen(false)}
+          actions={paletteActions}
+          playlists={playlists}
+          // Play just this song; up next fills with its radio (the artist + similar).
+          onPlayTrack={(t) => { setShowLyrics(false); playTrack(t, [t]); }}
+          onOpenPlaylist={(id) => { setShowLyrics(false); setSelectedPlaylistId(id); setCurrentView('library'); }}
+        />
+      )}
+
+      {/* Connect: phones on this PC, their controls, and moving music either way */}
+      {isDesktopApp() && (
+        <DevicesPanel
+          getLocalSnapshot={() => {
+            const state = handoffStateRef.current;
+            const audio = audioRef.current;
+            if (!state.currentTrack || !audio || !audio.src) return null;
+            return buildHandoffSnapshot(state.currentTrack, state.queue, state.queueIndex, audio.currentTime, !audio.paused);
+          }}
+          onSentToPhone={(name) => {
+            const audio = audioRef.current;
+            const track = currentTrackRef.current;
+            if (track) setHandoffAnimation({ key: Date.now(), direction: 'out', track, deviceName: name });
+            if (audio && !audio.paused) fadeOutAndPause(audio);
+          }}
+        />
+      )}
+
+      {/* Tap / flick to transfer: arrival / departure animation */}
+      <HandoffArrival animation={handoffAnimation} onDone={() => {
+        // After music arrives from the phone, land on the full-screen lyrics for that song.
+        if (handoffAnimation?.direction === 'in') setShowLyrics(true);
+        setHandoffAnimation(null);
+      }} />
+
+      {/* Tap / flick to transfer status pill */}
+      {handoffToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] pointer-events-none flex items-center gap-2 px-4 py-2.5 rounded-full bg-zinc-900/95 border border-zinc-700/80 shadow-2xl backdrop-blur-md text-white text-xs font-medium max-w-[90vw] text-center"
+          style={{ marginTop: 'env(safe-area-inset-top)' }}
+        >
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+            handoffToast.tone === 'success' ? 'bg-emerald-400' : handoffToast.tone === 'error' ? 'bg-rose-400' : 'bg-sky-400 animate-pulse'
+          }`} />
+          <span>{handoffToast.message}</span>
+        </div>
+      )}
+
       {/* Floating Toast Notification for Favorites Actions */}
       {favoriteToast && (
         <div 
@@ -2666,7 +3022,15 @@ export function App() {
         preload="auto"
         onLoadedMetadata={event => {
           const audio = event.currentTarget;
-          if (pendingResumeRef.current > 0) {
+          const handoffSeek = handoffSeekRef.current;
+          if (handoffSeek && handoffSeek.trackId === currentTrackRef.current?.id) {
+            // Land on the exact second: position + time since it was stamped + start-up latency.
+            handoffSeekRef.current = null;
+            const target = handoffSeek.position + (Date.now() - handoffSeek.anchor) / 1000 + 0.35;
+            const limit = Number.isFinite(audio.duration) ? Math.max(0, audio.duration - 0.5) : target;
+            audio.currentTime = Math.max(0, Math.min(target, limit));
+            pendingResumeRef.current = 0;
+          } else if (pendingResumeRef.current > 0) {
             const position = Math.min(pendingResumeRef.current, Number.isFinite(audio.duration) ? Math.max(0, audio.duration - 0.1) : pendingResumeRef.current);
             audio.currentTime = position;
             pendingResumeRef.current = 0;
@@ -2674,7 +3038,7 @@ export function App() {
         }}
         onLoadStart={() => { if (audioRef.current?.src) setPlaybackStatus('loading'); }}
         onWaiting={event => { setPlaybackStatus('buffering'); musicMemory.onPlaybackStateChange(false, event.currentTarget.currentTime); }}
-        onPlaying={event => { setPlaybackStatus('playing'); setPlaybackError(null); musicMemory.onPlaybackStateChange(true, event.currentTarget.currentTime); }}
+        onPlaying={event => { setPlaybackStatus('playing'); setPlaybackError(null); musicMemory.onPlaybackStateChange(true, event.currentTarget.currentTime); onHandoffAudioPlaying(); }}
         onTimeUpdate={(e) => {
           const t = e.currentTarget.currentTime;
           if (pendingResumeRef.current > 0 && e.currentTarget.readyState < 1) return;
@@ -2682,6 +3046,17 @@ export function App() {
             setCurrentTime(t);
             const dur = e.currentTarget.duration || duration;
             musicMemory.onTimeUpdate(t, dur);
+
+            // "Cached": after 30 s of listening, keep this song on the PC (instant + offline next time).
+            const ct = currentTrackRef.current;
+            if (t > 30 && ct?.id && isDesktopApp() && !cachedRequestedRef.current.has(ct.id) && !ct.id.startsWith('local_') && !downloadedTrackIds.has(ct.id)) {
+              cachedRequestedRef.current.add(ct.id);
+              fetch(getApiUrl(`/api/cache/${encodeURIComponent(ct.id)}`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ track: { title: ct.title, artist: ct.artist, album: ct.album, duration: ct.duration, durationSeconds: ct.durationSeconds, thumbnail: ct.thumbnail } }),
+              }).catch(() => {});
+            }
 
             // Spotify-Style Smart Radio: Pre-buffer next track at 15s left & seamlessly append to queue
             if (isSmartRadioEnabled && dur > 15 && (dur - t) <= 15 && (dur - t) > 0 && currentTrack?.id) {
@@ -2738,6 +3113,12 @@ export function App() {
           musicMemory.saveSessionSnapshot(snapshot.queue, snapshot.queueIndex, pendingResumeRef.current || e.currentTarget.currentTime);
         }}
         onEnded={() => {
+          // Sleep timer "end of this song": stop here instead of moving on.
+          if (sleepEndOfSongRef.current) {
+            setSleepTimer({ endsAt: null, endOfSong: false });
+            setIsPlaying(false);
+            return;
+          }
           // Smart Radio: Track completion in SQLite for positive weight
           if (currentTrackRef.current) {
             const dur = duration || 210;

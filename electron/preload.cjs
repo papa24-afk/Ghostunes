@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   recordPlay: (entry) => ipcRenderer.invoke('ghosttunes:record-play', entry),
   getListeningHistory: (params) => ipcRenderer.invoke('ghosttunes:get-listening-history', params),
   getListeningStats: () => ipcRenderer.invoke('ghosttunes:get-listening-stats'),
+  getTopTracks: (limit) => ipcRenderer.invoke('ghosttunes:get-top-tracks', limit),
   clearListeningHistory: (options) => ipcRenderer.invoke('ghosttunes:clear-listening-history', options),
   exportListeningData: () => ipcRenderer.invoke('ghosttunes:export-listening-data'),
 
@@ -46,6 +47,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importLocalFiles: () => ipcRenderer.invoke('ghosttunes:import-local-files'),
   openFolder: (type) => ipcRenderer.invoke('ghosttunes:open-folder', type),
   openExternalUrl: (url) => ipcRenderer.invoke('ghosttunes:open-external-url', url),
+
+  // Windows taskbar: report playback (buttons + icon progress), receive button clicks
+  setPlaybackState: (state) => ipcRenderer.send('ghosttunes:playback-state', state),
+  onTaskbarAction: (callback) => {
+    const handler = (_event, action) => callback(action);
+    ipcRenderer.on('ghosttunes:taskbar-action', handler);
+    return () => ipcRenderer.removeListener('ghosttunes:taskbar-action', handler);
+  },
 
   // Progress Event Subscriptions
   onDownloadProgress: (callback) => {

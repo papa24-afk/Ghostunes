@@ -30,7 +30,8 @@ import {
   Share2,
   WifiOff,
   Radio,
-  Disc3
+  Disc3,
+  Monitor
 } from 'lucide-react';
 import { getOptimizedArtwork, getThumbnailArtwork } from '../utils/artwork';
 import ghostIcon from '../assets/icon.png';
@@ -89,6 +90,8 @@ export interface MobilePlayerViewProps {
   downloadedTrackIds?: Set<string>;
   downloadingTrackIds?: Set<string>;
   hasUpdate?: boolean;
+  /** Tap / flick to transfer: sends playback to the PC (when playing) or pulls it from the PC. */
+  onHandoff?: () => void;
 }
 
 const GENRE_BROWSE_CARDS = [
@@ -128,6 +131,7 @@ export const MobilePlayerView: React.FC<MobilePlayerViewProps> = ({
   onOpenLyrics,
   onOpenAbout,
   onOpenAudioLab,
+  onHandoff,
   isSmartRadio = true,
   onToggleSmartRadio,
   searchQuery,
@@ -996,6 +1000,16 @@ export const MobilePlayerView: React.FC<MobilePlayerViewProps> = ({
                 </button>
               )}
 
+              {onHandoff && (
+                <button
+                  onClick={onHandoff}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white/[0.06] text-sky-400 hover:bg-white/10 border border-white/10 active:scale-95"
+                  title={isPlaying ? 'Move this song to Ghosttunes on your PC' : 'Play what your PC is playing'}
+                >
+                  <Monitor className="w-4 h-4 text-sky-400" />
+                  <span>{isPlaying ? 'Send to PC' : 'Get from PC'}</span>
+                </button>
+              )}
               {onDownloadTrack && (
                 <button
                   onClick={() => onDownloadTrack(track)}

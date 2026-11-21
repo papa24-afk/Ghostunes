@@ -47,8 +47,11 @@ import {
   Info,
   Compass,
   Plus,
-  Settings, ArrowUp, ArrowDown, ArrowUpRight, AlertCircle
+  Settings, ArrowUp, ArrowDown, ArrowUpRight, AlertCircle,
+  Smartphone,
+  ArrowUpLeft,
 } from 'lucide-react';
+import { addRecentPlay, addRecentQuery, clearRecentPlays, clearRecentQueries, getRecentPlays, getRecentQueries } from '../services/searchHistory';
 import { DownloadsView } from './DownloadsView';
 import { MusicMemoryView } from './MusicMemoryView';
 import { ArtistProfileView } from './ArtistProfileView';
@@ -67,6 +70,11 @@ import ghostIconSvg from '../assets/icon.svg';
 
 interface Props {
   track: Track | null;
+  /** Sleep timer: stop at a time (endsAt, ms) or at the end of the current song. */
+  sleepTimer?: { endsAt: number | null; endOfSong: boolean };
+  onSetSleepTimer?: (choice: number | 'end' | null) => void;
+  /** Set while the music is on a phone: the controls act on that phone. */
+  remoteDevice?: { name: string; output?: string | null; onPlayHere: () => void } | null;
   keyboardShortcutsEnabled?: boolean;
   currentTime: number;
   duration: number;
@@ -176,6 +184,9 @@ interface Props {
 
 export const DesktopPlayerView: React.FC<Props> = ({
   track,
+  remoteDevice = null,
+  sleepTimer,
+  onSetSleepTimer,
   keyboardShortcutsEnabled = true,
   currentTime,
   duration,
@@ -283,6 +294,21 @@ export const DesktopPlayerView: React.FC<Props> = ({
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [searchRecommended, setSearchRecommended] = useState<any[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<string[]>(getRecentQueries);
+  const [recentPlays, setRecentPlays] = useState<Track[]>(getRecentPlays);
+  const refreshRecent = () => { setRecentQueries(getRecentQueries()); setRecentPlays(getRecentPlays()); };
+  /** Playing from search results: remember the song and the search that found it. */
+  const playFromView = (t: Track, q?: Track[]) => {
+    if (currentView === 'explore' && searchQuery.trim()) {
+      addRecentQuery(searchQuery);
+      addRecentPlay(t);
+      refreshRecent();
+      // Play just this song; up next fills with its radio (the artist + similar), not the other search hits.
+      onPlayTrack(t, [t]);
+      return;
+    }
+    onPlayTrack(t, q);
+  };
 
   useEffect(() => {
     if (!searchQuery || searchQuery.trim().length < 2) {
@@ -756,6 +782,8 @@ export const DesktopPlayerView: React.FC<Props> = ({
             onSubmit={(e) => {
               e.preventDefault();
               if (searchQuery.trim()) {
+                addRecentQuery(searchQuery);
+                refreshRecent();
                 onViewChange('explore');
               }
             }} 
@@ -772,9 +800,64 @@ export const DesktopPlayerView: React.FC<Props> = ({
                   onViewChange('explore');
                 }
               }}
+              onFocus={() => { refreshRecent(); setIsSearchFocused(true); }}
+              onBlur={() => setIsSearchFocused(false)}
               placeholder="Search songs and artists…"
               className="w-full bg-[#141417] hover:bg-[#18181c] focus:bg-[#151518] border border-white/10 focus:border-white/30 rounded-full pl-9 pr-9 py-1.5 text-xs sm:text-sm text-white placeholder-zinc-500 outline-none transition-all shadow-inner"
             />
+            {isSearchFocused && !searchQuery.trim() && (recentPlays.length > 0 || recentQueries.length > 0) && (
+              <div
+                className="absolute left-0 right-0 top-full mt-2 z-[70] rounded-2xl bg-[#121215] border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.7)] p-3 max-h-[70vh] overflow-y-auto"
+                onMouseDown={(e) => e.preventDefault() /* keep the search box focused while clicking here */}
+              >
+                {recentPlays.length > 0 && (
+                  <section>
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <h3 className="text-sm font-semibold text-white">From recent searches</h3>
+                      <button type="button" onClick={() => { clearRecentPlays(); refreshRecent(); }} className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 cursor-pointer" title="Clear" aria-label="Clear songs from recent searches"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                      {recentPlays.map((t, i) => (
+                        <button
+                          type="button"
+                          key={t.id}
+                          onClick={() => { setIsSearchFocused(false); (document.activeElement as HTMLElement | null)?.blur(); onPlayTrack(t, recentPlays.slice(i).concat(recentPlays.slice(0, i))); }}
+                          className="w-[112px] flex-shrink-0 text-left group cursor-pointer"
+                          title={`${t.title} · ${t.artist}`}
+                        >
+                          <div className="w-[112px] h-[112px] rounded-xl overflow-hidden bg-zinc-900 border border-white/10 group-hover:border-white/30 transition-colors">
+                            <Artwork src={t.thumbnail} trackId={t.id} alt={t.title} isDataSaver={isDataSaver} />
+                          </div>
+                          <p className="mt-1.5 text-xs font-semibold text-white truncate">{t.title}</p>
+                          <p className="text-[11px] text-zinc-400 truncate">{[t.artist, t.duration].filter(Boolean).join(' · ')}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {recentQueries.length > 0 && (
+                  <section className={recentPlays.length > 0 ? 'mt-2' : ''}>
+                    <div className="flex items-center justify-between px-1 mb-1">
+                      <h3 className="text-sm font-semibold text-white">Recent searches</h3>
+                      <button type="button" onClick={() => { clearRecentQueries(); refreshRecent(); }} className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 cursor-pointer" title="Clear" aria-label="Clear recent searches"><X className="w-4 h-4" /></button>
+                    </div>
+                    {recentQueries.map(q => (
+                      <div key={q} className="flex items-center rounded-lg hover:bg-white/5">
+                        <button
+                          type="button"
+                          onClick={() => { addRecentQuery(q); onSearchChange(q); onViewChange('explore'); setIsSearchFocused(false); (document.activeElement as HTMLElement | null)?.blur(); }}
+                          className="flex-1 min-w-0 flex items-center gap-3 px-2 py-2 text-left cursor-pointer"
+                        >
+                          <History className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                          <span className="text-sm text-zinc-200 truncate">{q}</span>
+                        </button>
+                        <button type="button" onClick={() => onSearchChange(q)} className="p-2 text-zinc-400 hover:text-white cursor-pointer" title="Edit this search" aria-label={`Edit search: ${q}`}><ArrowUpLeft className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </section>
+                )}
+              </div>
+            )}
             {searchQuery && (
               <button
                 type="button"
@@ -1962,7 +2045,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
           selectedPlaylistId={selectedPlaylistId}
           onSelectPlaylist={onSelectPlaylist}
           activeTab={currentView === 'favorites' ? 'favorites' : currentView === 'library' ? 'library' : 'explore'}
-          onPlayTrack={onPlayTrack}
+          onPlayTrack={playFromView}
           onTogglePlayPause={onPlayPause}
           onToggleFavorite={onToggleFavorite || onToggleLike}
           onOpenAddToPlaylist={onOpenAddToPlaylist}
@@ -2006,6 +2089,13 @@ export const DesktopPlayerView: React.FC<Props> = ({
       {(playbackStatus === 'loading' || playbackStatus === 'buffering') && (
         <div className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden z-50 pointer-events-none">
           <div className="w-full h-full bg-gradient-to-r from-transparent via-[#e0536c] to-transparent animate-pulse" />
+        </div>
+      )}
+      {remoteDevice && (
+        <div className="relative z-40 w-full shrink-0 flex items-center justify-center gap-3 bg-[#e0536c] text-black text-xs font-semibold px-4 py-1">
+          <Smartphone className="w-3.5 h-3.5" />
+          <span className="truncate">Playing on {remoteDevice.name}{remoteDevice.output ? ` · ${remoteDevice.output}` : ''}</span>
+          <button onClick={remoteDevice.onPlayHere} className="ml-1 px-2.5 py-0.5 rounded-full bg-black/80 text-white hover:bg-black cursor-pointer">Play here</button>
         </div>
       )}
       <footer className="relative z-40 w-full shrink-0 bg-[#09090b]/95 backdrop-blur-2xl border-t border-white/[0.08] px-6 sm:px-10 py-2.5 flex items-center justify-between gap-4 sm:gap-6 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] pointer-events-auto">
@@ -2249,6 +2339,7 @@ export const DesktopPlayerView: React.FC<Props> = ({
 
           {/* 3. RIGHT: Volume, Lyrics, Fullscreen */}
           <div className="flex items-center gap-2 sm:gap-3 sm:w-[200px] lg:w-[240px] justify-end flex-shrink-0">
+            {onSetSleepTimer && <SleepTimerButton timer={sleepTimer} onSet={onSetSleepTimer} />}
             {/* Volume Control with Burgundy Slider */}
             <div className="hidden sm:flex items-center gap-1.5 px-1 relative group">
               <button
@@ -2673,3 +2764,42 @@ export const DesktopPlayerView: React.FC<Props> = ({
     </div>
   );
 };
+
+/** Moon button: stop the music after a while, or at the end of this song (with a gentle fade). */
+function SleepTimerButton({ timer, onSet }: { timer?: { endsAt: number | null; endOfSong: boolean }; onSet: (choice: number | 'end' | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [, setTick] = useState(0);
+  const active = Boolean(timer?.endsAt || timer?.endOfSong);
+  useEffect(() => {
+    if (!timer?.endsAt) return;
+    const t = window.setInterval(() => setTick(n => n + 1), 15000);
+    return () => window.clearInterval(t);
+  }, [timer?.endsAt]);
+  const minutesLeft = timer?.endsAt ? Math.max(1, Math.ceil((timer.endsAt - Date.now()) / 60000)) : 0;
+  const label = timer?.endOfSong ? 'End of song' : minutesLeft ? `${minutesLeft} min` : '';
+  const choose = (c: number | 'end' | null) => { onSet(c); setOpen(false); };
+  return (
+    <div className="relative hidden sm:block">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`h-8 flex items-center gap-1 rounded-full transition-colors focus-visible:ring-1 focus-visible:ring-white/25 outline-none cursor-pointer ${active ? 'px-2 text-[#e0536c] bg-[#e0536c]/10' : 'w-8 justify-center text-zinc-400 hover:text-white hover:bg-white/10'}`}
+        title={active ? `Sleep timer: ${label}` : 'Sleep timer'}
+        aria-label="Sleep timer"
+        aria-expanded={open}
+      >
+        <Moon className="w-4 h-4" />
+        {active && <span className="text-[10px] font-semibold whitespace-nowrap">{label}</span>}
+      </button>
+      {open && (
+        <div className="absolute bottom-10 right-0 w-44 rounded-xl bg-[#141418] border border-white/10 shadow-2xl p-1 z-50" onMouseLeave={() => setOpen(false)}>
+          <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-zinc-400">Stop playing after</p>
+          {[15, 30, 45, 60].map(m => (
+            <button key={m} onClick={() => choose(m)} className="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5 rounded-lg cursor-pointer">{m} minutes</button>
+          ))}
+          <button onClick={() => choose('end')} className="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5 rounded-lg cursor-pointer">End of this song</button>
+          {active && <button onClick={() => choose(null)} className="w-full text-left px-3 py-1.5 text-xs text-[#e0536c] hover:bg-white/5 rounded-lg cursor-pointer">Turn off</button>}
+        </div>
+      )}
+    </div>
+  );
+}
