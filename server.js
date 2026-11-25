@@ -4,6 +4,8 @@ import { registerHandoffRoutes } from './serverHandoff.js';
 import { registerProximityRoutes, startProximityWatcher } from './serverProximity.js';
 import { registerDeviceRoutes } from './serverDevices.js';
 import { registerCacheRoutes, cacheDir } from './serverCache.js';
+import { registerYtmAccountRoutes } from './serverYtmAccount.js';
+import { registerSpotifyAccountRoutes } from './serverSpotifyAccount.js';
 import { startBluetoothLink } from './serverBluetooth.js';
 import { registerMobileRoutes, fillMissingDurations, startDiscoveryResponder } from './serverMobile.js';
 import cors from 'cors';
@@ -14,7 +16,12 @@ import { fileURLToPath } from 'url';
 import { Readable } from 'stream';
 import { Platform, Innertube, UniversalCache } from 'youtubei.js';
 import { Ytdl, chooseFormat } from '@distube/ytdl-core';
-const ytdlClient = new Ytdl();
+import { findMusicVideo } from './musicVideo.js';
+import { createChunkFetcher, collect } from './serverVideoChunks.js';
+// Anonymous kinds first; once you're signed in to YouTube Music, the signed-in kinds (YouTube Music web,
+// YouTube Studio web) work too, including on networks where YouTube blocks anonymous play (shared
+// school / campus Wi-Fi: "Sign in to confirm you're not a bot").
+const ytdlClient = new Ytdl({ clients: ['web_music', 'tv', 'web_embedded', 'mweb', 'web_creator', 'visionos'] });
 import {
   get_smart_radio,
   record_user_interaction,
@@ -673,35 +680,14 @@ async function getYtdlTrackInfo(videoId) {
   if (cached && cached.expiresAt > Date.now()) {
     return cached.info;
   }
-async function getYtdlTrackInfo(videoId) {
-  const cached = ytdlInfoCache.get(videoId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.info;
-  }
   // Share one lookup between callers (a warm-up and the real play request can overlap).
   if (ytdlInfoInflight.has(videoId)) return ytdlInfoInflight.get(videoId);
-
-  const pending = (async () => {
-    let info;
-    try {
-      info = await ytdlClient.getInfo(videoId);
-    } catch (primaryErr) {
-      console.warn(`[Stream API] Primary YTDL info failed for ${videoId}: ${primaryErr.message}. Trying mobile web fallback...`);
-      try {
-        const fallbackClient = new Ytdl({ clients: ['mweb', 'web_embedded'] });
-        info = await fallbackClient.getInfo(videoId);
-      } catch (fallbackErr) {
-        console.warn(`[Stream API] Fallback client failed for ${videoId}: ${fallbackErr.message}`);
-        throw primaryErr;
-      }
-    }
-    ytdlInfoCache.set(videoId, {
-      info,
-      expiresAt: Date.now() + 2 * 3600 * 1000 // 2 hours
-    });
-    return info;
-  })().finally(() => ytdlInfoInflight.delete(videoId));
-
+  const pending = ytdlClient.getInfo(videoId)
+    .then(info => {
+      ytdlInfoCache.set(videoId, { info, expiresAt: Date.now() + 2 * 3600 * 1000 }); // 2 hours
+      return info;
+    })
+    .finally(() => ytdlInfoInflight.delete(videoId));
   ytdlInfoInflight.set(videoId, pending);
   return pending;
 }
@@ -711,13 +697,103 @@ function warmTrack(videoId) {
   if (!/^[A-Za-z0-9_-]{6,20}$/.test(String(videoId || ''))) return;
   getYtdlTrackInfo(videoId).catch(() => {});
 }
+
+// Pieces of the files in use (video picture, its sound, the song's sound), fetched several at a time
+// (see serverVideoChunks.js). The last 4 files are kept, so they don't push each other out.
+const pieceFetchers = new Map();
+function videoPieces(id, info, format, only) {
+  // Labelled by the id we asked for (the library's own info may not carry it): one downloader per file.
+  const key = `${id}:${format.itag}`;
+  let f = pieceFetchers.get(key);
+  if (f) { pieceFetchers.delete(key); pieceFetchers.set(key, f); return f; }
+  f = createChunkFetcher(async (start, end) => collect(await ytdlClient.download(info, { filter: only, range: { start, end } })));
+  pieceFetchers.set(key, f);
+  while (pieceFetchers.size > 4) pieceFetchers.delete(pieceFetchers.keys().next().value);
+  return f;
 }
+
+// The whole sound of a song or video at low quality (small), fetched over several connections: used
+// to match a song to its music video by ear (src/utils/audioAlign.ts).
+app.get('/api/audio-low/:id', async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return res.status(400).end();
+  try {
+    const info = await getYtdlTrackInfo(id);
+    const audio = (info.formats || []).filter(f => f.hasAudio && !f.hasVideo && parseInt(f.contentLength, 10) > 0);
+    const format = audio.sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0))[0];
+    if (!format) return res.status(404).json({ error: 'no_audio' });
+    const total = parseInt(format.contentLength, 10);
+    if (total > 12 * 1024 * 1024) return res.status(413).json({ error: 'too_long' });
+    res.setHeader('Content-Type', format.mimeType?.split(';')[0] || 'audio/webm');
+    res.setHeader('Content-Length', total);
+    let closed = false;
+    req.on('close', () => { closed = true; });
+    const write = (buf) => new Promise((resolve) => { if (res.write(buf)) resolve(); else res.once('drain', resolve); });
+    await videoPieces(id, info, format, (f) => f.itag === format.itag)(`${id}:${format.itag}`, total, 0, total - 1, write, () => closed);
+    res.end();
+  } catch {
+    if (!res.headersSent) res.status(502).json({ error: 'audio_unavailable' }); else res.end();
+  }
+});
+
+// Song / Video switch: which video goes with a song (its official music video, else its own id).
+app.get('/api/music-video', async (req, res) => {
+  const title = String(req.query.title || '').slice(0, 200);
+  const artist = String(req.query.artist || '').slice(0, 200);
+  const id = title ? await findMusicVideo(title, artist).catch(() => null) : null;
+  res.json({ id });
+});
+
+// Song / Video switch: the song's video without sound (MP4, up to ?h=, 480p by default), with byte ranges for seeking.
+// The music itself keeps playing from /api/stream; the app keeps the two in step.
+app.get('/api/video/:id', async (req, res) => {
+  const songId = String(req.params.id || '');
+  if (!/^[A-Za-z0-9_-]{11}$/.test(songId)) return res.status(400).end();
+  try {
+    // The song's real music video when there is one (not the cover-only "art track").
+    const title = String(req.query.title || '').slice(0, 200);
+    const artist = String(req.query.artist || '').slice(0, 200);
+    const videoId = (title && await findMusicVideo(title, artist).catch(() => null)) || songId;
+    const info = await getYtdlTrackInfo(videoId);
+    // ?h= the sharpness the window asks for (360 to 1080; it steps down by itself on slow networks).
+    const maxH = Math.min(1080, Math.max(144, parseInt(String(req.query.h || '480'), 10) || 480));
+    const all = (info.formats || []).filter(f => f.hasVideo && !f.hasAudio && f.container === 'mp4' && (f.height || 0) > 0);
+    const options = all.filter(f => f.height <= maxH).length ? all.filter(f => f.height <= maxH) : all;
+    const format = options.sort((a, b) => (b.height - a.height) || ((b.bitrate || 0) - (a.bitrate || 0)))[0];
+    if (!format) return res.status(404).json({ error: 'no_video' });
+    const total = parseInt(format.contentLength, 10) || 0;
+    const only = (f) => f.itag === format.itag;
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', format.mimeType?.split(';')[0] || 'video/mp4');
+    if (!total) {
+      // Size unknown: one plain download (rare).
+      const stream = await ytdlClient.download(info, { filter: only });
+      req.on('close', () => { try { stream.destroy(); } catch {} });
+      stream.on('error', () => res.end());
+      return stream.pipe(res);
+    }
+    const match = (req.headers.range || '').match(/bytes=(\d+)-(\d*)/);
+    const start = match ? parseInt(match[1], 10) : 0;
+    const end = match ? Math.min(match[2] ? parseInt(match[2], 10) : total - 1, total - 1) : total - 1;
+    if (start >= total) { res.setHeader('Content-Range', `bytes */${total}`); return res.status(416).end(); }
+    res.status(match ? 206 : 200);
+    if (match) res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+    res.setHeader('Content-Length', end - start + 1);
+    // Several connections at once (each one is held to about the music's speed by YouTube).
+    let closed = false;
+    req.on('close', () => { closed = true; });
+    const write = (buf) => new Promise((resolve) => { if (res.write(buf)) resolve(); else res.once('drain', resolve); });
+    videoPieces(videoId, info, format, only)(`${videoId}:${format.itag}`, total, start, end, write, () => closed)
+      .then(() => res.end())
+      .catch(() => res.end());
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: 'video_unavailable' });
+  }
+});
 
 // 3. Audio Streaming Proxy with HTTP 206 Range Support powered by @distube/ytdl-core
 app.get('/api/stream/:id', async (req, res) => {
   const videoId = req.params.id;
-  const trackTitle = req.query.title ? String(req.query.title) : '';
-  const trackArtist = req.query.artist ? String(req.query.artist) : '';
   // Optional ?quality=low for mobile data saving; default stays highest.
   const audioQuality = req.query.quality === 'low' ? 'lowestaudio' : 'highestaudio';
   const sanitizedId = String(videoId || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
@@ -749,35 +825,7 @@ app.get('/api/stream/:id', async (req, res) => {
   }
 
   try {
-    let info;
-    try {
-      info = await getYtdlTrackInfo(videoId);
-    } catch (primaryStreamErr) {
-      if (trackTitle) {
-        console.warn(`[Stream API] Track ${videoId} unavailable (${primaryStreamErr.message}). Searching fallback release for "${trackTitle} ${trackArtist}"...`);
-        try {
-          const innertube = await getInnertube();
-          const searchResult = await innertube.music.search(`${trackTitle} ${trackArtist}`, { type: 'song' });
-          const altSong = searchResult.songs?.contents?.find(s => s.id && s.id !== videoId);
-          if (altSong) {
-            console.log(`[Stream API] Found fallback match: ${altSong.id} ("${altSong.title}" by ${altSong.artists?.[0]?.name})`);
-            info = await getYtdlTrackInfo(altSong.id);
-          } else {
-            const genSearch = await innertube.search(`${trackTitle} ${trackArtist} audio`);
-            const altVideo = genSearch.videos?.find(v => v.id && v.id !== videoId);
-            if (altVideo) {
-              console.log(`[Stream API] Found fallback video match: ${altVideo.id} ("${altVideo.title?.text}")`);
-              info = await getYtdlTrackInfo(altVideo.id);
-            }
-          }
-        } catch (searchFallbackErr) {
-          console.warn(`[Stream API] Fallback search failed: ${searchFallbackErr.message}`);
-        }
-      }
-      if (!info) {
-        throw primaryStreamErr;
-      }
-    }
+    const info = await getYtdlTrackInfo(videoId);
     // Prefer MP4 container (AAC) for standard HTML5 byte-range seekability across Chromium and Electron
     let format = chooseFormat(info.formats, { 
       filter: (f) => f.hasAudio && !f.hasVideo && f.container === 'mp4', 
@@ -817,8 +865,8 @@ app.get('/api/stream/:id', async (req, res) => {
         res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLength}`);
         res.setHeader('Content-Length', chunkSize);
 
-                stream = await ytdlClient.download(info, {
-          format,
+        stream = await ytdlClient.download(info, {
+          filter: downloadFilter,
           quality: audioQuality,
           range: { start, end }
         });
@@ -830,8 +878,8 @@ app.get('/api/stream/:id', async (req, res) => {
         res.setHeader('Content-Length', totalLength);
       }
       res.status(200);
-            stream = await ytdlClient.download(info, {
-        format,
+      stream = await ytdlClient.download(info, {
+        filter: downloadFilter,
         quality: audioQuality
       });
     }
@@ -2165,8 +2213,17 @@ app.get('/api/rooms/:roomId/sync', (req, res) => {
 
 // Tap / flick to transfer between phone and desktop (must be before the static catch-all)
 registerProximityRoutes(app); // before /api/handoff/:id
-registerDeviceRoutes(app, { warmTrack });
+registerDeviceRoutes(app, { warmTrack, port: PORT });
 registerCacheRoutes(app, { getYtdlTrackInfo, ytdlClient });
+registerYtmAccountRoutes(app, {
+  getInnertube,
+  // Stream as you when signed in; a failed anonymous lookup is retried signed in.
+  onSession: (cookie) => {
+    try { ytdlClient.setCookie(cookie); } catch (err) { console.error('[Stream] Could not use the sign-in:', err.message); }
+    ytdlInfoCache.clear();
+  },
+});
+registerSpotifyAccountRoutes(app, { getInnertube });
 registerHandoffRoutes(app);
 // Ghosttunes Mobile additions: stream prepare, typed search, playlist details
 registerMobileRoutes(app, { getInnertube, getYtdlTrackInfo, chooseFormat, ytdlClient });

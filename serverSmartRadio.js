@@ -74,11 +74,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_artist_avatars_name ON artist_avatars(artist_name);
 `);
 
-// Migration safeguard for existing user databases
-try {
-  db.exec(`ALTER TABLE track_interactions ADD COLUMN total_duration_listened REAL DEFAULT 0;`);
-} catch (e) {
-  // Column already exists
+// Older databases (from earlier versions) may lack newer columns: add them, so saving a play never fails.
+for (const [table, column, type] of [['track_interactions', 'total_duration_listened', 'REAL DEFAULT 0']]) {
+  try {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    if (!cols.includes(column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      console.log(`[SmartRadio DB] Upgraded: added ${table}.${column}`);
+    }
+  } catch (err) {
+    console.error('[SmartRadio DB] Upgrade failed:', err.message);
+  }
 }
 
 console.log('[SmartRadio DB] SQLite database initialized at:', dbPath);

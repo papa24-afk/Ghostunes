@@ -8,6 +8,8 @@ const { GhosttunesDatabase } = require('./database.cjs');
 const { DownloadManager } = require('./downloadManager.cjs');
 const { AutoUpdaterManager } = require('./autoUpdaterManager.cjs');
 const { setupTaskbar } = require('./taskbar.cjs');
+const { setupYtmAccount } = require('./ytmAccount.cjs');
+const { setupSpotifyAccount } = require('./spotifyAccount.cjs');
 
 // Must register privileged schemes before app is ready
 registerPrivilegedSchemes();
@@ -28,6 +30,7 @@ let downloadManager = null;
 let autoUpdaterManager = null;
 let backendProcess = null;
 let isQuitting = false;
+let backendRestarts = [];
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -138,6 +141,19 @@ async function ensureBackendServer() {
 
     backendProcess.on('exit', (code, signal) => {
       logDesktop(`[Electron Main] Backend process exited with code ${code}, signal ${signal}`);
+      backendProcess = null;
+      // It stopped by itself (not because you closed the app): start it again, a few times at most.
+      if (!isQuitting) {
+        const now = Date.now();
+        backendRestarts = backendRestarts.filter(t => now - t < 60_000);
+        if (backendRestarts.length < 5) {
+          backendRestarts.push(now);
+          logDesktop('[Electron Main] Restarting the backend…');
+          setTimeout(() => { ensureBackendServer().catch(() => {}); }, 1500);
+        } else {
+          logDesktop('[Electron Main] Backend keeps stopping; not restarting again for now.');
+        }
+      }
     });
 
     // Wait until port 3001 responds (up to 8 seconds)
@@ -222,6 +238,16 @@ function createWindow() {
       }
     });
   }
+
+  // If the page crashes or hangs, note why and bring it back instead of leaving a dead window.
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logDesktop('[Electron Main] Window page stopped:', details.reason, 'exit code', details.exitCode);
+    if (!isQuitting && details.reason !== 'clean-exit' && mainWindow && !mainWindow.isDestroyed()) {
+      setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload(); }, 800);
+    }
+  });
+  mainWindow.on('unresponsive', () => logDesktop('[Electron Main] Window not responding'));
+  mainWindow.on('responsive', () => logDesktop('[Electron Main] Window responding again'));
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
@@ -449,6 +475,11 @@ function setupIpcHandlers() {
 
   // Taskbar thumbnail buttons + progress on the taskbar icon
   setupTaskbar(() => mainWindow);
+
+  // YouTube Music account (sign in on Google's page; session kept encrypted on this PC)
+  setupYtmAccount(() => mainWindow);
+  // Spotify account (sign in on Spotify's page; short-lived token from its web player, memory only)
+  setupSpotifyAccount(() => mainWindow);
 
   // 1. Tracks & Offline
   ipcMain.handle('ghosttunes:get-local-track', async (_event, trackId) => {
@@ -918,6 +949,10 @@ app.whenReady().then(async () => {
       mainWindow.focus();
     }
   });
+});
+
+app.on('child-process-gone', (_e, details) => {
+  logDesktop('[Electron Main] A helper process stopped:', details.type, details.reason, 'exit code', details.exitCode);
 });
 
 app.on('before-quit', () => {

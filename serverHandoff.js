@@ -131,7 +131,7 @@ export function getDesktop() {
     const position = current.nowPlaying.position + elapsed;
     nowPlaying = { ...current.nowPlaying, position: limit ? Math.min(position, limit) : position };
   }
-  return { online: desktopClients.size > 0 || Boolean(current), name: pcName, output: current?.output || null, nowPlaying };
+  return { online: desktopClients.size > 0 || Boolean(current), name: pcName, output: current?.output || null, volume: current?.volume ?? null, nowPlaying };
 }
 
 export function sendToDesktop(event, data) {
@@ -166,7 +166,8 @@ export function registerHandoffRoutes(app) {
   app.post('/api/handoff/presence', (req, res) => {
     const nowPlaying = req.body?.nowPlaying ? sanitizeSnapshot(req.body.nowPlaying) : null;
     const output = typeof req.body?.output === 'string' ? req.body.output.slice(0, 80) : null;
-    presence = { nowPlaying, output, stampedAt: Date.now() };
+    const vol = Number(req.body?.volume);
+    presence = { nowPlaying, output, volume: Number.isFinite(vol) ? Math.min(1, Math.max(0, vol)) : null, stampedAt: Date.now() };
     res.json({ ok: true, serverTime: presence.stampedAt });
   });
 

@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: (type) => ipcRenderer.invoke('ghosttunes:open-folder', type),
   openExternalUrl: (url) => ipcRenderer.invoke('ghosttunes:open-external-url', url),
 
+  // YouTube Music account
+  ytmSignIn: () => ipcRenderer.invoke('ghosttunes:ytm-sign-in'),
+  ytmSignOut: () => ipcRenderer.invoke('ghosttunes:ytm-sign-out'),
+  spotifySignIn: () => ipcRenderer.invoke('ghosttunes:spotify-sign-in'),
+  spotifySignOut: () => ipcRenderer.invoke('ghosttunes:spotify-sign-out'),
+
   // Windows taskbar: report playback (buttons + icon progress), receive button clicks
   setPlaybackState: (state) => ipcRenderer.send('ghosttunes:playback-state', state),
   onTaskbarAction: (callback) => {

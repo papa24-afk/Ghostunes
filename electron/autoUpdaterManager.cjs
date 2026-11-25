@@ -66,28 +66,6 @@ class AutoUpdaterManager {
     autoUpdater.allowPrerelease = false;
     autoUpdater.allowDowngrade = false;
 
-    // Ensure app-update.yml exists for electron-updater
-    if (app.isPackaged) {
-      const defaultYml = 'owner: papa24-afk\nrepo: Ghostunes\nprovider: github\nupdaterCacheDirName: metrolist-web-updater\n';
-      const prodPath = path.join(process.resourcesPath, 'app-update.yml');
-      if (!fs.existsSync(prodPath)) {
-        try {
-          fs.writeFileSync(prodPath, defaultYml, 'utf8');
-          this.log('Synthesized missing app-update.yml in resourcesPath:', prodPath);
-        } catch (writeErr) {
-          this.log('Could not write app-update.yml to resourcesPath, trying userData:', writeErr.message);
-          try {
-            const fallbackPath = path.join(app.getPath('userData'), 'app-update.yml');
-            fs.writeFileSync(fallbackPath, defaultYml, 'utf8');
-            autoUpdater.updateConfigPath = fallbackPath;
-            this.log('Configured autoUpdater.updateConfigPath to:', fallbackPath);
-          } catch (userDataErr) {
-            this.log('Failed to write fallback app-update.yml:', userDataErr.message);
-          }
-        }
-      }
-    }
-
     // Set GitHub Feed
     try {
       autoUpdater.setFeedURL({
