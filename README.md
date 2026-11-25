@@ -10,15 +10,21 @@
 
 ---
 
-## 📥 Download Windows Installer
+## 📥 Downloads & Releases
 
-Get the latest production release ready to run on Windows 10 & 11:
+Get the latest release ready to run on Windows and Android:
 
-[**⬇️ Download Ghosttunes-Setup-2.0.0.exe (145 MB)**](https://github.com/papa24-afk/Ghostunes/releases/download/v2.0.0/Ghosttunes-Setup-2.0.0.exe)
+### 💻 Windows Desktop (v2.4.1)
+* [**⬇️ Download Windows Installer (Ghosttunes-Setup-2.4.1.exe - 145 MB)**](https://github.com/papa24-afk/Ghostunes/releases/download/v2.4.1/Ghosttunes-Setup-2.4.1.exe)
+  * **SHA-256:** `490ED0A17451EE05B96660A4E3E3A34CC8A442144D60FA2797E17F3EBBF58393`
+* [**📦 Download Portable ZIP (Ghosttunes-PC-2.4.1.zip - 144 MB)**](https://github.com/papa24-afk/Ghostunes/releases/download/v2.4.1/Ghosttunes-PC-2.4.1.zip)
+  * **SHA-256:** `185D99FBA9F2F44D3C283CDE90F371668D31C3F8B1A7862CD9941515A809A022`
 
-* **Current Version:** `2.0.0`
-* **Official Release Notes:** [Ghosttunes v2.0.0 on GitHub Releases](https://github.com/papa24-afk/Ghostunes/releases/tag/v2.0.0)
-* **SHA-256 Checksum:** `E7773F3C8BB513EDC2CDEF5C8382AA9008A0194846F7FCF55810EE98EAD3481E`
+### 📱 Android Phone (v2.4.0)
+* [**⬇️ Download Android App (Ghosttunes-Phone-2.4.0.apk - 4.8 MB)**](https://github.com/papa24-afk/Ghostunes/releases/download/v2.4.1/Ghosttunes-Phone-2.4.0.apk)
+  * **SHA-256:** `487CB29E51952C1F72229258F5FA8735FDE65A11586DB3D0D29C3EEE58780C6D`
+
+* **Official Release Notes:** [Ghosttunes v2.4.1 on GitHub Releases](https://github.com/papa24-afk/Ghostunes/releases/tag/v2.4.1)
 
 ---
 
